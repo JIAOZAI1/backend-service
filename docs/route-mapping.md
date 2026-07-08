@@ -8,7 +8,7 @@
 
 | Host | 路由前缀 | 后端服务 | K8s Service | 说明 |
 | --- | --- | --- | --- | --- |
-| `lead-mind-backend.dev.com` | `/sso-service` | sso-service | `sso-service.default.svc.cluster.local:8080` | 统一登录服务（注册/登录/注销/续期） |
+| `lead-mind-backend.dev.com` | `/sso-service` | sso-service | `sso-service.default.svc.cluster.local:8080` | 统一登录服务（注册/登录/注销/续期/角色管理），详见 [sso-service README](../services/sso-service/README.md#api-说明) |
 
 ## 新增服务接入步骤
 

@@ -18,7 +18,7 @@ spec:
       containers:
         - name: sso-service
           image: ghcr.io/jiaozai1/sso-service:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8080

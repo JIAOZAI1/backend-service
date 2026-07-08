@@ -16,10 +16,12 @@
 
 跨域策略统一在网关层配置（[cors-middleware.yaml](cors-middleware.yaml)，`Middleware` 资源 `gateway-cors`），通过 `traefik.ingress.kubernetes.io/router.middlewares` 注解挂载到 Ingress。所有经网关转发的服务共用同一份 CORS 策略，**服务自身不再重复处理 CORS**——两处都加会导致响应重复 `Access-Control-Allow-Origin` 头，浏览器会拒绝。
 
-当前允许的来源（`accessControlAllowOriginList`）：
+当前允许的来源（`accessControlAllowOriginList`，以 [cors-middleware.yaml](cors-middleware.yaml) 实际内容为准）：
 
 * `http://localhost:3000`（本地前端开发）
+* `http://localhost:5173`（本地前端开发，Vite 默认端口）
 * `http://lead-mind-backend.dev.com`
+* `http://lead-mind.dev.com`
 
 新增允许的来源时，编辑 [cors-middleware.yaml](cors-middleware.yaml) 后重新 `kubectl apply`。
 
@@ -53,3 +55,5 @@ curl -H "Host: lead-mind-backend.dev.com" http://192.168.8.184/sso-service/api/v
   -X POST -H "Content-Type: application/json" \
   -d '{"username":"x","password":"y"}'
 ```
+
+角色管理接口需要 `admin` 角色，完整接口列表见 [sso-service README](../../../services/sso-service/README.md#api-说明)。
