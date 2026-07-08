@@ -12,6 +12,17 @@
 
 完整的路由前缀 ↔ 服务映射见 [docs/route-mapping.md](../../../docs/route-mapping.md)。
 
+## CORS
+
+跨域策略统一在网关层配置（[cors-middleware.yaml](cors-middleware.yaml)，`Middleware` 资源 `gateway-cors`），通过 `traefik.ingress.kubernetes.io/router.middlewares` 注解挂载到 Ingress。所有经网关转发的服务共用同一份 CORS 策略，**服务自身不再重复处理 CORS**——两处都加会导致响应重复 `Access-Control-Allow-Origin` 头，浏览器会拒绝。
+
+当前允许的来源（`accessControlAllowOriginList`）：
+
+* `http://localhost:3000`（本地前端开发）
+* `http://lead-mind-backend.dev.com`
+
+新增允许的来源时，编辑 [cors-middleware.yaml](cors-middleware.yaml) 后重新 `kubectl apply`。
+
 ## 新增服务接入
 
 在 [ingress.yaml](ingress.yaml) 的 `spec.rules[0].http.paths` 下追加一条：
@@ -31,6 +42,7 @@
 ## 部署
 
 ```bash
+kubectl apply -f deploy/k8s/gateway/cors-middleware.yaml
 kubectl apply -f deploy/k8s/gateway/ingress.yaml
 ```
 

@@ -1,0 +1,26 @@
+# 网关统一 CORS 策略：所有经网关转发的服务共用同一份跨域配置，
+# 服务自身不再重复处理 CORS（避免网关+服务重复添加响应头导致浏览器拒绝）。
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: gateway-cors
+  namespace: default
+spec:
+  headers:
+    accessControlAllowOriginList:
+      - "http://localhost:3000"
+      - "http://lead-mind-backend.dev.com"
+      - "http://lead-mind.dev.com"
+    accessControlAllowMethods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - OPTIONS
+    accessControlAllowHeaders:
+      - Origin
+      - Content-Type
+      - Authorization
+    accessControlAllowCredentials: true
+    accessControlMaxAge: 43200
+    addVaryHeader: true

@@ -7,6 +7,9 @@ kind: Ingress
 metadata:
   name: backend-gateway
   namespace: default
+  annotations:
+    # 挂载统一 CORS Middleware（见 cors-middleware.yaml），跨域策略只在网关配置一次
+    traefik.ingress.kubernetes.io/router.middlewares: default-gateway-cors@kubernetescrd
 spec:
   ingressClassName: traefik
   rules:

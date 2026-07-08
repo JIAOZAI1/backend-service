@@ -11,6 +11,8 @@ import (
 // 因此服务内部路由必须以此前缀注册，才能与网关转发路径一致。
 const RoutePrefix = "/sso-service"
 
+// CORS 统一在网关层（Traefik Middleware）配置，服务自身不重复处理，
+// 避免网关与服务同时添加 CORS 响应头导致浏览器拒绝（重复 header）。
 func NewRouter(authHandler *AuthHandler, issuer *jwtutil.Issuer, blacklist middleware.BlacklistChecker) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
