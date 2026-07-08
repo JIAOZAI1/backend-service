@@ -1,0 +1,17 @@
+app:
+  env: staging
+  port: 8080
+
+mysql:
+  dsn: "sso_user:${MYSQL_PASSWORD}@tcp(127.0.0.1:3306)/sso_db?charset=utf8mb4&parseTime=True&loc=Local"
+
+redis:
+  addr: "127.0.0.1:6379"
+  password: "${REDIS_PASSWORD}"
+  db: 0
+
+jwt:
+  secret: "${JWT_SECRET}"
+  issuer: "sso-service"
+  accessTokenTTL: 15m
+  refreshTokenTTL: 168h
