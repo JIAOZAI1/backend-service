@@ -52,15 +52,19 @@ make run
 
 ## API 说明
 
-Base path: `/api/v1/auth`
+服务路由前缀：`/sso-service`（详见仓库根目录 [docs/route-convention.md](../../docs/route-convention.md)，网关按 host + 前缀转发且不 strip，因此服务内部路由必须自带此前缀）。
+
+Base path: `/sso-service/api/v1/auth`
 
 | Method | Path | 说明 |
 | --- | --- | --- |
-| POST | `/api/v1/auth/register` | 注册新用户 |
-| POST | `/api/v1/auth/login` | 登录，返回 access/refresh token |
-| POST | `/api/v1/auth/refresh` | 使用 refresh token 换取新的 token 对（旧 refresh token 立即失效） |
-| POST | `/api/v1/auth/logout` | 注销，使 refresh token 失效 |
-| GET  | `/api/v1/auth/me` | 需 `Authorization: Bearer <access token>`，返回当前用户信息 |
+| POST | `/sso-service/api/v1/auth/register` | 注册新用户 |
+| POST | `/sso-service/api/v1/auth/login` | 登录，返回 access/refresh token |
+| POST | `/sso-service/api/v1/auth/refresh` | 使用 refresh token 换取新的 token 对（旧 refresh token 立即失效） |
+| POST | `/sso-service/api/v1/auth/logout` | 注销，使 refresh token 失效 |
+| GET  | `/sso-service/api/v1/auth/me` | 需 `Authorization: Bearer <access token>`，返回当前用户信息 |
+
+网关外部访问地址示例：`http://lead-mind-backend.dev.com/sso-service/api/v1/auth/login`
 
 ### 登出机制说明
 
@@ -73,6 +77,8 @@ Base path: `/api/v1/auth`
 ```
 GET /health
 ```
+
+健康检查不带路由前缀：K8s 探针直接访问 Pod，不经过网关。
 
 ## Docker 构建方式
 

@@ -1,0 +1,22 @@
+# 统一后端服务网关：按 host + 路由前缀转发到各微服务，不 strip 前缀（原样转发给后端）。
+# 规则见微服务项目开发规范.md 第 16.3 节，服务与路由的对应关系见 docs/route-mapping.md。
+#
+# 新增服务时，在 rules[0].http.paths 下追加一条 path 规则即可，无需改动其他服务的规则。
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: backend-gateway
+  namespace: default
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: lead-mind-backend.dev.com
+      http:
+        paths:
+          - path: /sso-service
+            pathType: Prefix
+            backend:
+              service:
+                name: sso-service
+                port:
+                  name: http
