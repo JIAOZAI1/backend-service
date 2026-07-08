@@ -32,6 +32,7 @@ type AuthService interface {
 type authService struct {
 	userRepo   repository.UserRepository
 	tokenRepo  repository.TokenRepository
+	roleRepo   repository.RoleRepository
 	jwtIssuer  *jwtutil.Issuer
 	accessTTL  time.Duration
 	refreshTTL time.Duration
@@ -40,12 +41,14 @@ type authService struct {
 func NewAuthService(
 	userRepo repository.UserRepository,
 	tokenRepo repository.TokenRepository,
+	roleRepo repository.RoleRepository,
 	jwtIssuer *jwtutil.Issuer,
 	accessTTL, refreshTTL time.Duration,
 ) AuthService {
 	return &authService{
 		userRepo:   userRepo,
 		tokenRepo:  tokenRepo,
+		roleRepo:   roleRepo,
 		jwtIssuer:  jwtIssuer,
 		accessTTL:  accessTTL,
 		refreshTTL: refreshTTL,
@@ -80,7 +83,15 @@ func (s *authService) Register(ctx context.Context, req model.RegisterRequest) (
 		return model.UserResponse{}, err
 	}
 
-	return model.NewUserResponse(u), nil
+	defaultRole, err := s.roleRepo.FindByName(ctx, model.DefaultRoleName)
+	if err != nil {
+		return model.UserResponse{}, err
+	}
+	if err := s.roleRepo.AssignToUser(ctx, u.ID, defaultRole.ID); err != nil {
+		return model.UserResponse{}, err
+	}
+
+	return model.NewUserResponse(u, []string{defaultRole.Name}), nil
 }
 
 func (s *authService) Login(ctx context.Context, req model.LoginRequest) (model.TokenPair, error) {
@@ -160,7 +171,13 @@ func (s *authService) GetProfile(ctx context.Context, userID uint64) (model.User
 	if err != nil {
 		return model.UserResponse{}, err
 	}
-	return model.NewUserResponse(u), nil
+
+	roleNames, err := s.roleNamesForUser(ctx, u.ID)
+	if err != nil {
+		return model.UserResponse{}, err
+	}
+
+	return model.NewUserResponse(u, roleNames), nil
 }
 
 func (s *authService) issueTokenPair(ctx context.Context, u *model.User) (model.TokenPair, error) {
@@ -181,10 +198,28 @@ func (s *authService) issueTokenPair(ctx context.Context, u *model.User) (model.
 		return model.TokenPair{}, err
 	}
 
+	roleNames, err := s.roleNamesForUser(ctx, u.ID)
+	if err != nil {
+		return model.TokenPair{}, err
+	}
+
 	return model.TokenPair{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		TokenType:    "Bearer",
 		ExpiresIn:    int64(s.accessTTL.Seconds()),
+		Roles:        roleNames,
 	}, nil
+}
+
+func (s *authService) roleNamesForUser(ctx context.Context, userID uint64) ([]string, error) {
+	roles, err := s.roleRepo.ListByUserID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(roles))
+	for i, r := range roles {
+		names[i] = r.Name
+	}
+	return names, nil
 }

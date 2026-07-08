@@ -96,16 +96,97 @@ func (f *fakeTokenRepo) IsAccessTokenBlacklisted(_ context.Context, jti string) 
 	return f.blacklist[jti], nil
 }
 
-func newTestService() (AuthService, *fakeUserRepo, *fakeTokenRepo) {
+type fakeRoleRepo struct {
+	byName    map[string]*model.Role
+	byID      map[uint64]*model.Role
+	userRoles map[uint64]map[uint64]struct{} // userID -> roleID set
+	nextID    uint64
+}
+
+func newFakeRoleRepo() *fakeRoleRepo {
+	repo := &fakeRoleRepo{
+		byName:    map[string]*model.Role{},
+		byID:      map[uint64]*model.Role{},
+		userRoles: map[uint64]map[uint64]struct{}{},
+	}
+	// 模拟迁移脚本预置的 default / admin 角色
+	for _, name := range []string{model.DefaultRoleName, "admin"} {
+		repo.nextID++
+		role := &model.Role{ID: repo.nextID, Name: name}
+		repo.byName[name] = role
+		repo.byID[role.ID] = role
+	}
+	return repo
+}
+
+func (f *fakeRoleRepo) Create(_ context.Context, r *model.Role) error {
+	if _, exists := f.byName[r.Name]; exists {
+		return repository.ErrRoleNameTaken
+	}
+	f.nextID++
+	r.ID = f.nextID
+	f.byName[r.Name] = r
+	f.byID[r.ID] = r
+	return nil
+}
+
+func (f *fakeRoleRepo) FindByName(_ context.Context, name string) (*model.Role, error) {
+	if r, ok := f.byName[name]; ok {
+		return r, nil
+	}
+	return nil, repository.ErrRoleNotFound
+}
+
+func (f *fakeRoleRepo) FindByID(_ context.Context, id uint64) (*model.Role, error) {
+	if r, ok := f.byID[id]; ok {
+		return r, nil
+	}
+	return nil, repository.ErrRoleNotFound
+}
+
+func (f *fakeRoleRepo) ListAll(_ context.Context) ([]model.Role, error) {
+	roles := make([]model.Role, 0, len(f.byID))
+	for _, r := range f.byID {
+		roles = append(roles, *r)
+	}
+	return roles, nil
+}
+
+func (f *fakeRoleRepo) AssignToUser(_ context.Context, userID, roleID uint64) error {
+	if f.userRoles[userID] == nil {
+		f.userRoles[userID] = map[uint64]struct{}{}
+	}
+	if _, exists := f.userRoles[userID][roleID]; exists {
+		return repository.ErrRoleAlreadyOwned
+	}
+	f.userRoles[userID][roleID] = struct{}{}
+	return nil
+}
+
+func (f *fakeRoleRepo) RemoveFromUser(_ context.Context, userID, roleID uint64) error {
+	delete(f.userRoles[userID], roleID)
+	return nil
+}
+
+func (f *fakeRoleRepo) ListByUserID(_ context.Context, userID uint64) ([]model.Role, error) {
+	roles := make([]model.Role, 0)
+	for roleID := range f.userRoles[userID] {
+		roles = append(roles, *f.byID[roleID])
+	}
+	return roles, nil
+}
+
+func newTestService() (AuthService, *fakeUserRepo, *fakeTokenRepo, *fakeRoleRepo) {
 	userRepo := newFakeUserRepo()
 	tokenRepo := newFakeTokenRepo()
+	roleRepo := newFakeRoleRepo()
 	issuer := jwtutil.NewIssuer("test-secret", "sso-service-test")
-	svc := NewAuthService(userRepo, tokenRepo, issuer, time.Minute, time.Hour)
-	return svc, userRepo, tokenRepo
+	svc := NewAuthService(userRepo, tokenRepo, roleRepo, issuer, time.Minute, time.Hour)
+	return svc, userRepo, tokenRepo, roleRepo
 }
 
 func TestRegister_Success(t *testing.T) {
-	svc, _, _ := newTestService()
+	svc, _, _, _ := newTestService()
 
 	resp, err := svc.Register(context.Background(), model.RegisterRequest{
 		Username: "alice",
@@ -119,7 +200,7 @@ func TestRegister_Success(t *testing.T) {
 }
 
 func TestRegister_DuplicateUsername(t *testing.T) {
-	svc, _, _ := newTestService()
+	svc, _, _, _ := newTestService()
 	ctx := context.Background()
 
 	_, err := svc.Register(ctx, model.RegisterRequest{Username: "alice", Email: "a1@example.com", Password: "password123"})
@@ -130,7 +211,7 @@ func TestRegister_DuplicateUsername(t *testing.T) {
 }
 
 func TestRegister_DuplicateEmail(t *testing.T) {
-	svc, _, _ := newTestService()
+	svc, _, _, _ := newTestService()
 	ctx := context.Background()
 
 	_, err := svc.Register(ctx, model.RegisterRequest{Username: "alice", Email: "dup@example.com", Password: "password123"})
@@ -141,7 +222,7 @@ func TestRegister_DuplicateEmail(t *testing.T) {
 }
 
 func TestLogin_Success(t *testing.T) {
-	svc, _, _ := newTestService()
+	svc, _, _, _ := newTestService()
 	ctx := context.Background()
 
 	_, err := svc.Register(ctx, model.RegisterRequest{Username: "alice", Email: "alice@example.com", Password: "password123"})
@@ -155,7 +236,7 @@ func TestLogin_Success(t *testing.T) {
 }
 
 func TestLogin_WrongPassword(t *testing.T) {
-	svc, _, _ := newTestService()
+	svc, _, _, _ := newTestService()
 	ctx := context.Background()
 
 	_, err := svc.Register(ctx, model.RegisterRequest{Username: "alice", Email: "alice@example.com", Password: "password123"})
@@ -166,14 +247,14 @@ func TestLogin_WrongPassword(t *testing.T) {
 }
 
 func TestLogin_UnknownUser(t *testing.T) {
-	svc, _, _ := newTestService()
+	svc, _, _, _ := newTestService()
 
 	_, err := svc.Login(context.Background(), model.LoginRequest{Username: "ghost", Password: "password123"})
 	assert.ErrorIs(t, err, ErrInvalidCredentials)
 }
 
 func TestRefresh_Success_RotatesToken(t *testing.T) {
-	svc, _, tokenRepo := newTestService()
+	svc, _, tokenRepo, _ := newTestService()
 	ctx := context.Background()
 
 	_, err := svc.Register(ctx, model.RegisterRequest{Username: "alice", Email: "alice@example.com", Password: "password123"})
@@ -193,14 +274,14 @@ func TestRefresh_Success_RotatesToken(t *testing.T) {
 }
 
 func TestRefresh_InvalidToken(t *testing.T) {
-	svc, _, _ := newTestService()
+	svc, _, _, _ := newTestService()
 
 	_, err := svc.Refresh(context.Background(), model.RefreshRequest{RefreshToken: "not-a-jwt"})
 	assert.ErrorIs(t, err, ErrInvalidRefreshToken)
 }
 
 func TestLogout_RevokesRefreshToken(t *testing.T) {
-	svc, _, _ := newTestService()
+	svc, _, _, _ := newTestService()
 	ctx := context.Background()
 
 	_, err := svc.Register(ctx, model.RegisterRequest{Username: "alice", Email: "alice@example.com", Password: "password123"})
@@ -217,7 +298,7 @@ func TestLogout_RevokesRefreshToken(t *testing.T) {
 }
 
 func TestGetProfile_Success(t *testing.T) {
-	svc, _, _ := newTestService()
+	svc, _, _, _ := newTestService()
 	ctx := context.Background()
 
 	created, err := svc.Register(ctx, model.RegisterRequest{Username: "alice", Email: "alice@example.com", Password: "password123"})
@@ -226,4 +307,52 @@ func TestGetProfile_Success(t *testing.T) {
 	profile, err := svc.GetProfile(ctx, created.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "alice", profile.Username)
+}
+
+func TestRegister_AssignsDefaultRole(t *testing.T) {
+	svc, _, _, _ := newTestService()
+	ctx := context.Background()
+
+	resp, err := svc.Register(ctx, model.RegisterRequest{Username: "alice", Email: "alice@example.com", Password: "password123"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{model.DefaultRoleName}, resp.Roles)
+}
+
+func TestLogin_ReturnsRoles(t *testing.T) {
+	svc, _, _, _ := newTestService()
+	ctx := context.Background()
+
+	_, err := svc.Register(ctx, model.RegisterRequest{Username: "alice", Email: "alice@example.com", Password: "password123"})
+	require.NoError(t, err)
+
+	tokens, err := svc.Login(ctx, model.LoginRequest{Username: "alice", Password: "password123"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{model.DefaultRoleName}, tokens.Roles)
+}
+
+func TestRefresh_ReturnsRoles(t *testing.T) {
+	svc, _, _, _ := newTestService()
+	ctx := context.Background()
+
+	_, err := svc.Register(ctx, model.RegisterRequest{Username: "alice", Email: "alice@example.com", Password: "password123"})
+	require.NoError(t, err)
+
+	tokens, err := svc.Login(ctx, model.LoginRequest{Username: "alice", Password: "password123"})
+	require.NoError(t, err)
+
+	refreshed, err := svc.Refresh(ctx, model.RefreshRequest{RefreshToken: tokens.RefreshToken})
+	require.NoError(t, err)
+	assert.Equal(t, []string{model.DefaultRoleName}, refreshed.Roles)
+}
+
+func TestGetProfile_IncludesRoles(t *testing.T) {
+	svc, _, _, _ := newTestService()
+	ctx := context.Background()
+
+	created, err := svc.Register(ctx, model.RegisterRequest{Username: "alice", Email: "alice@example.com", Password: "password123"})
+	require.NoError(t, err)
+
+	profile, err := svc.GetProfile(ctx, created.ID)
+	require.NoError(t, err)
+	assert.Equal(t, []string{model.DefaultRoleName}, profile.Roles)
 }

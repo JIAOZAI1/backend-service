@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/company/sso-service/internal/handler"
+	"github.com/company/sso-service/internal/model"
 	"github.com/company/sso-service/pkg/jwtutil"
 )
 
@@ -18,8 +19,16 @@ func (noopBlacklist) IsAccessTokenBlacklisted(_ context.Context, _ string) (bool
 	return false, nil
 }
 
+type fakeRoleLister struct {
+	roles map[uint64][]model.Role
+}
+
+func (f fakeRoleLister) ListByUserID(_ context.Context, userID uint64) ([]model.Role, error) {
+	return f.roles[userID], nil
+}
+
 func TestHealthRoute(t *testing.T) {
-	router := handler.NewRouter(nil, jwtutil.NewIssuer("secret", "issuer"), noopBlacklist{})
+	router := handler.NewRouter(nil, nil, jwtutil.NewIssuer("secret", "issuer"), noopBlacklist{}, fakeRoleLister{})
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()

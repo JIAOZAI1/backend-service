@@ -11,14 +11,26 @@ import (
 // 因此服务内部路由必须以此前缀注册，才能与网关转发路径一致。
 const RoutePrefix = "/sso-service"
 
+// AdminRole 是角色管理接口要求的角色名，拥有该角色的用户才能调用 /roles、/users/:userID/roles 相关接口。
+const AdminRole = "admin"
+
 // CORS 统一在网关层（Traefik Middleware）配置，服务自身不重复处理，
 // 避免网关与服务同时添加 CORS 响应头导致浏览器拒绝（重复 header）。
-func NewRouter(authHandler *AuthHandler, issuer *jwtutil.Issuer, blacklist middleware.BlacklistChecker) *gin.Engine {
+func NewRouter(
+	authHandler *AuthHandler,
+	roleHandler *RoleHandler,
+	issuer *jwtutil.Issuer,
+	blacklist middleware.BlacklistChecker,
+	roleLister middleware.UserRoleLister,
+) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 
 	// 健康检查不带前缀：K8s 探针直接访问 Pod，不经过网关
 	r.GET("/health", Health)
+
+	requireAuth := middleware.RequireAuth(issuer, blacklist)
+	requireAdmin := middleware.RequireRole(roleLister, AdminRole)
 
 	base := r.Group(RoutePrefix)
 	{
@@ -30,7 +42,17 @@ func NewRouter(authHandler *AuthHandler, issuer *jwtutil.Issuer, blacklist middl
 			auth.POST("/refresh", authHandler.Refresh)
 			auth.POST("/logout", authHandler.Logout)
 
-			auth.GET("/me", middleware.RequireAuth(issuer, blacklist), authHandler.Me)
+			auth.GET("/me", requireAuth, authHandler.Me)
+
+			// 角色管理：需登录 + admin 角色
+			roles := v1.Group("/roles", requireAuth, requireAdmin)
+			roles.GET("", roleHandler.ListRoles)
+			roles.POST("", roleHandler.CreateRole)
+
+			users := v1.Group("/users", requireAuth, requireAdmin)
+			users.GET("/:userID/roles", roleHandler.ListUserRoles)
+			users.POST("/:userID/roles", roleHandler.AssignRoleToUser)
+			users.DELETE("/:userID/roles/:roleName", roleHandler.RemoveRoleFromUser)
 		}
 	}
 

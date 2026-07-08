@@ -95,7 +95,7 @@ func (h *AuthHandler) Me(c *gin.Context) {
 
 func writeServiceError(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, service.ErrUsernameTaken), errors.Is(err, service.ErrEmailTaken):
+	case errors.Is(err, service.ErrUsernameTaken), errors.Is(err, service.ErrEmailTaken), errors.Is(err, service.ErrRoleNameTaken), errors.Is(err, service.ErrRoleAlreadyOwned):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 	case errors.Is(err, service.ErrInvalidCredentials):
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
@@ -103,6 +103,8 @@ func writeServiceError(c *gin.Context, err error) {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 	case errors.Is(err, service.ErrInvalidRefreshToken):
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+	case errors.Is(err, service.ErrRoleNotFound), errors.Is(err, service.ErrUserNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 	default:
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 	}
