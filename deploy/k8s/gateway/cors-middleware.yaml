@@ -9,6 +9,7 @@ spec:
   headers:
     accessControlAllowOriginList:
       - "http://localhost:3000"
+      - "http://localhost:5173"
       - "http://lead-mind-backend.dev.com"
       - "http://lead-mind.dev.com"
     accessControlAllowMethods:
