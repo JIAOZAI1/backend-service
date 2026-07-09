@@ -69,4 +69,16 @@ public class JobService(IJobRepository jobRepository) : IJobService
             ?? throw new NotFoundException($"job {jobId} not found");
         return job.Tasks.OrderBy(t => t.Order).Select(JobTaskResponse.FromEntity).ToList();
     }
+
+    public async Task<PagedResult<JobResponse>> ListJobsAsync(int page, int pageSize, CancellationToken cancellationToken)
+    {
+        var (items, total) = await jobRepository.ListPagedAsync(page, pageSize, cancellationToken);
+        return new PagedResult<JobResponse>
+        {
+            Items = items.Select(JobResponse.FromEntity).ToList(),
+            Page = page,
+            PageSize = pageSize,
+            Total = total,
+        };
+    }
 }

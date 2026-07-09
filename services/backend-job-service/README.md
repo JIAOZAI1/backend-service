@@ -86,6 +86,7 @@ Base path: `/backend-job-service/api/v1`
 | Method | Path | 说明 |
 | --- | --- | --- |
 | POST | `/backend-job-service/api/v1/jobs` | 新建作业（配置调度类型：Cron 或一次性） |
+| GET  | `/backend-job-service/api/v1/jobs` | 分页查询作业列表（`?page=` 默认 1，`?pageSize=` 默认 20，最大 200，按 id 倒序） |
 | GET  | `/backend-job-service/api/v1/jobs/{jobId}` | 查询作业详情 |
 | POST | `/backend-job-service/api/v1/jobs/{jobId}/tasks` | 在作业下新建任务（绑定插件 HandlerType） |
 | GET  | `/backend-job-service/api/v1/jobs/{jobId}/tasks` | 查询作业下的任务列表 |

@@ -19,6 +19,17 @@ public class JobRepository(JobDbContext db) : IJobRepository
             .Include(j => j.Tasks)
             .ToListAsync(cancellationToken);
 
+    public async Task<(List<Job> Items, long Total)> ListPagedAsync(int page, int pageSize, CancellationToken cancellationToken)
+    {
+        var query = db.Jobs.OrderByDescending(j => j.Id);
+        var total = await query.LongCountAsync(cancellationToken);
+        var items = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+        return (items, total);
+    }
+
     public async Task AddAsync(Job job, CancellationToken cancellationToken) =>
         await db.Jobs.AddAsync(job, cancellationToken);
 

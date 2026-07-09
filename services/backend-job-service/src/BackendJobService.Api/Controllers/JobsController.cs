@@ -23,6 +23,14 @@ public class JobsController(IJobService jobService, IExecutionQueryService execu
         }
     }
 
+    [HttpGet]
+    public async Task<ActionResult<PagedResult<JobResponse>>> ListJobs([FromQuery] int page, [FromQuery] int pageSize, CancellationToken cancellationToken)
+    {
+        var effectivePage = page > 0 ? page : 1;
+        var effectivePageSize = pageSize is > 0 and <= 200 ? pageSize : 20;
+        return Ok(await jobService.ListJobsAsync(effectivePage, effectivePageSize, cancellationToken));
+    }
+
     [HttpGet("{jobId:long}")]
     public async Task<ActionResult<JobResponse>> GetJob(long jobId, CancellationToken cancellationToken)
     {
