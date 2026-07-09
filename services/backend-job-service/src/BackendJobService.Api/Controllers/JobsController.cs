@@ -128,10 +128,15 @@ public class JobsController(IJobService jobService, IExecutionQueryService execu
     }
 
     [HttpGet("{jobId:long}/executions")]
-    public async Task<ActionResult<List<JobExecutionResponse>>> ListExecutions(long jobId, [FromQuery] int limit, CancellationToken cancellationToken)
+    public async Task<ActionResult<PagedResult<JobExecutionResponse>>> ListExecutions(
+        long jobId,
+        [FromQuery] int page,
+        [FromQuery] int pageSize,
+        CancellationToken cancellationToken)
     {
-        var effectiveLimit = limit is > 0 and <= 200 ? limit : 20;
-        return Ok(await executionQueryService.ListExecutionsByJobAsync(jobId, effectiveLimit, cancellationToken));
+        var effectivePage = page > 0 ? page : 1;
+        var effectivePageSize = pageSize is > 0 and <= 200 ? pageSize : 20;
+        return Ok(await executionQueryService.ListExecutionsByJobAsync(jobId, effectivePage, effectivePageSize, cancellationToken));
     }
 
     [HttpGet("{jobId:long}/status")]

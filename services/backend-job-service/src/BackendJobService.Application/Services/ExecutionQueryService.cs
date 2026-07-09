@@ -13,10 +13,16 @@ public class ExecutionQueryService(IJobExecutionRepository executionRepository, 
         return JobExecutionResponse.FromEntity(execution);
     }
 
-    public async Task<List<JobExecutionResponse>> ListExecutionsByJobAsync(long jobId, int limit, CancellationToken cancellationToken)
+    public async Task<PagedResult<JobExecutionResponse>> ListExecutionsByJobAsync(long jobId, int page, int pageSize, CancellationToken cancellationToken)
     {
-        var executions = await executionRepository.ListByJobIdAsync(jobId, limit, cancellationToken);
-        return executions.Select(JobExecutionResponse.FromEntity).ToList();
+        var (items, total) = await executionRepository.ListPagedByJobIdAsync(jobId, page, pageSize, cancellationToken);
+        return new PagedResult<JobExecutionResponse>
+        {
+            Items = items.Select(JobExecutionResponse.FromEntity).ToList(),
+            Page = page,
+            PageSize = pageSize,
+            Total = total,
+        };
     }
 
     public async Task<JobStatusResponse> GetJobStatusAsync(long jobId, CancellationToken cancellationToken)

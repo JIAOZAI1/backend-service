@@ -15,13 +15,18 @@ public class JobExecutionRepository(JobDbContext db) : IJobExecutionRepository
             .Include(e => e.TaskExecutions)
             .FirstOrDefaultAsync(e => e.Id == id, cancellationToken);
 
-    public Task<List<JobExecution>> ListByJobIdAsync(long jobId, int limit, CancellationToken cancellationToken) =>
-        db.JobExecutions
-            .Where(e => e.JobId == jobId)
+    public async Task<(List<JobExecution> Items, long Total)> ListPagedByJobIdAsync(long jobId, int page, int pageSize, CancellationToken cancellationToken)
+    {
+        var query = db.JobExecutions.Where(e => e.JobId == jobId);
+        var total = await query.LongCountAsync(cancellationToken);
+        var items = await query
             .OrderByDescending(e => e.TriggeredAt)
-            .Take(limit)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .Include(e => e.TaskExecutions)
             .ToListAsync(cancellationToken);
+        return (items, total);
+    }
 
     public Task<JobExecution?> GetLatestByJobIdAsync(long jobId, CancellationToken cancellationToken) =>
         db.JobExecutions

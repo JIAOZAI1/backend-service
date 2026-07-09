@@ -6,7 +6,7 @@ public interface IJobExecutionRepository
 {
     Task<JobExecution?> GetByIdAsync(long id, CancellationToken cancellationToken);
     Task<JobExecution?> GetWithTaskExecutionsByIdAsync(long id, CancellationToken cancellationToken);
-    Task<List<JobExecution>> ListByJobIdAsync(long jobId, int limit, CancellationToken cancellationToken);
+    Task<(List<JobExecution> Items, long Total)> ListPagedByJobIdAsync(long jobId, int page, int pageSize, CancellationToken cancellationToken);
     Task<JobExecution?> GetLatestByJobIdAsync(long jobId, CancellationToken cancellationToken);
     Task AddAsync(JobExecution execution, CancellationToken cancellationToken);
     Task AddTaskExecutionAsync(TaskExecution taskExecution, CancellationToken cancellationToken);
