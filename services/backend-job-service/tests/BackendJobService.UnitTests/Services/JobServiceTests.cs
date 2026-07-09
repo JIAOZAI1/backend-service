@@ -99,6 +99,160 @@ public class JobServiceTests
     }
 
     [Fact]
+    public async Task UpdateJobAsync_JobExists_UpdatesFieldsAndRecomputesNextRunAt()
+    {
+        var job = new Job { Id = 1, Name = "old-name", ScheduleType = JobScheduleType.OneTime, RunAt = DateTime.UtcNow.AddDays(1), Status = JobStatus.Enabled };
+        _jobRepository
+            .Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(job);
+
+        var request = new UpdateJobRequest
+        {
+            Name = "daily-report",
+            ScheduleType = JobScheduleType.Cron,
+            CronExpression = "0 0 * * *",
+            Status = JobStatus.Enabled,
+        };
+
+        var result = await _sut.UpdateJobAsync(1, request, CancellationToken.None);
+
+        result.Name.ShouldBe("daily-report");
+        result.NextRunAt.ShouldNotBeNull();
+        _jobRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateJobAsync_Disabled_ClearsNextRunAt()
+    {
+        var job = new Job { Id = 1, Name = "daily-report", ScheduleType = JobScheduleType.Cron, CronExpression = "0 0 * * *", Status = JobStatus.Enabled, NextRunAt = DateTime.UtcNow };
+        _jobRepository
+            .Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(job);
+
+        var request = new UpdateJobRequest
+        {
+            Name = "daily-report",
+            ScheduleType = JobScheduleType.Cron,
+            CronExpression = "0 0 * * *",
+            Status = JobStatus.Disabled,
+        };
+
+        var result = await _sut.UpdateJobAsync(1, request, CancellationToken.None);
+
+        result.Status.ShouldBe(JobStatus.Disabled);
+        result.NextRunAt.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task UpdateJobAsync_NotFound_ThrowsNotFoundException()
+    {
+        _jobRepository
+            .Setup(r => r.GetByIdAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Job?)null);
+
+        var request = new UpdateJobRequest { Name = "x", ScheduleType = JobScheduleType.Cron, CronExpression = "0 0 * * *", Status = JobStatus.Enabled };
+
+        await Should.ThrowAsync<NotFoundException>(() => _sut.UpdateJobAsync(999, request, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task UpdateJobAsync_InvalidCron_ThrowsValidationException()
+    {
+        var job = new Job { Id = 1, Name = "daily-report" };
+        _jobRepository
+            .Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(job);
+
+        var request = new UpdateJobRequest { Name = "daily-report", ScheduleType = JobScheduleType.Cron, CronExpression = "garbage", Status = JobStatus.Enabled };
+
+        await Should.ThrowAsync<ValidationException>(() => _sut.UpdateJobAsync(1, request, CancellationToken.None));
+        _jobRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteJobAsync_JobExists_SetsDeletedAt()
+    {
+        var job = new Job { Id = 1, Name = "daily-report" };
+        _jobRepository
+            .Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(job);
+
+        await _sut.DeleteJobAsync(1, CancellationToken.None);
+
+        job.DeletedAt.ShouldNotBeNull();
+        _jobRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteJobAsync_NotFound_ThrowsNotFoundException()
+    {
+        _jobRepository
+            .Setup(r => r.GetByIdAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Job?)null);
+
+        await Should.ThrowAsync<NotFoundException>(() => _sut.DeleteJobAsync(999, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task UpdateJobTaskAsync_TaskExists_UpdatesFields()
+    {
+        var task = new JobTask { Id = 1, JobId = 1, Name = "old", Order = 1, HandlerType = "H1", PluginAssembly = "p.dll" };
+        _jobRepository
+            .Setup(r => r.GetTaskByIdAsync(1, 1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(task);
+
+        var request = new UpdateJobTaskRequest
+        {
+            Name = "renamed",
+            Order = 2,
+            HandlerType = "H2",
+            PluginAssembly = "p2.dll",
+        };
+
+        var result = await _sut.UpdateJobTaskAsync(1, 1, request, CancellationToken.None);
+
+        result.Name.ShouldBe("renamed");
+        result.Order.ShouldBe(2);
+        _jobRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UpdateJobTaskAsync_NotFound_ThrowsNotFoundException()
+    {
+        _jobRepository
+            .Setup(r => r.GetTaskByIdAsync(It.IsAny<long>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((JobTask?)null);
+
+        var request = new UpdateJobTaskRequest { Name = "x", Order = 1, HandlerType = "H1", PluginAssembly = "p.dll" };
+
+        await Should.ThrowAsync<NotFoundException>(() => _sut.UpdateJobTaskAsync(1, 999, request, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task DeleteJobTaskAsync_TaskExists_SetsDeletedAt()
+    {
+        var task = new JobTask { Id = 1, JobId = 1, Name = "step-1" };
+        _jobRepository
+            .Setup(r => r.GetTaskByIdAsync(1, 1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(task);
+
+        await _sut.DeleteJobTaskAsync(1, 1, CancellationToken.None);
+
+        task.DeletedAt.ShouldNotBeNull();
+        _jobRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteJobTaskAsync_NotFound_ThrowsNotFoundException()
+    {
+        _jobRepository
+            .Setup(r => r.GetTaskByIdAsync(It.IsAny<long>(), It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((JobTask?)null);
+
+        await Should.ThrowAsync<NotFoundException>(() => _sut.DeleteJobTaskAsync(1, 999, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task GetJobAsync_NotFound_ThrowsNotFoundException()
     {
         _jobRepository

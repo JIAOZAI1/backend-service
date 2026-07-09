@@ -11,39 +11,45 @@ namespace BackendJobService.Application.Validators;
 /// </summary>
 public static class JobValidator
 {
-    public static void ValidateCreateRequest(CreateJobRequest request)
+    public static void ValidateCreateRequest(CreateJobRequest request) =>
+        ValidateSchedule(request.ScheduleType, request.CronExpression, request.RunAt);
+
+    public static void ValidateUpdateRequest(UpdateJobRequest request) =>
+        ValidateSchedule(request.ScheduleType, request.CronExpression, request.RunAt);
+
+    private static void ValidateSchedule(JobScheduleType scheduleType, string? cronExpression, DateTime? runAt)
     {
-        switch (request.ScheduleType)
+        switch (scheduleType)
         {
             case JobScheduleType.Cron:
-                if (string.IsNullOrWhiteSpace(request.CronExpression))
+                if (string.IsNullOrWhiteSpace(cronExpression))
                 {
                     throw new ValidationException("cronExpression is required when scheduleType is Cron");
                 }
-                if (request.RunAt is not null)
+                if (runAt is not null)
                 {
                     throw new ValidationException("runAt must not be set when scheduleType is Cron");
                 }
-                TryParseCron(request.CronExpression);
+                TryParseCron(cronExpression);
                 break;
 
             case JobScheduleType.OneTime:
-                if (request.RunAt is null)
+                if (runAt is null)
                 {
                     throw new ValidationException("runAt is required when scheduleType is OneTime");
                 }
-                if (request.CronExpression is not null)
+                if (cronExpression is not null)
                 {
                     throw new ValidationException("cronExpression must not be set when scheduleType is OneTime");
                 }
-                if (request.RunAt <= DateTime.UtcNow)
+                if (runAt <= DateTime.UtcNow)
                 {
                     throw new ValidationException("runAt must be in the future");
                 }
                 break;
 
             default:
-                throw new ValidationException($"unsupported scheduleType: {request.ScheduleType}");
+                throw new ValidationException($"unsupported scheduleType: {scheduleType}");
         }
     }
 

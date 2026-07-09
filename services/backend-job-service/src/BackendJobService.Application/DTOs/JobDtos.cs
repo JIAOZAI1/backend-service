@@ -22,6 +22,27 @@ public class CreateJobTaskRequest
     public int MaxRetryCount { get; init; }
 }
 
+public class UpdateJobRequest
+{
+    public required string Name { get; init; }
+    public string Description { get; init; } = string.Empty;
+    public required JobScheduleType ScheduleType { get; init; }
+    public string? CronExpression { get; init; }
+    public DateTime? RunAt { get; init; }
+    public required JobStatus Status { get; init; }
+}
+
+public class UpdateJobTaskRequest
+{
+    public required string Name { get; init; }
+    public required int Order { get; init; }
+    public required string HandlerType { get; init; }
+    public required string PluginAssembly { get; init; }
+    public string ParametersJson { get; init; } = "{}";
+    public int TimeoutSeconds { get; init; } = 300;
+    public int MaxRetryCount { get; init; }
+}
+
 public class JobResponse
 {
     public long Id { get; init; }

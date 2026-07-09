@@ -114,6 +114,34 @@ public class JobValidatorTests
     }
 
     [Fact]
+    public void ValidateUpdateRequest_Cron_WithValidExpression_DoesNotThrow()
+    {
+        var request = new UpdateJobRequest
+        {
+            Name = "daily-report",
+            ScheduleType = JobScheduleType.Cron,
+            CronExpression = "0 0 * * *",
+            Status = JobStatus.Enabled,
+        };
+
+        Should.NotThrow(() => JobValidator.ValidateUpdateRequest(request));
+    }
+
+    [Fact]
+    public void ValidateUpdateRequest_Cron_InvalidExpression_Throws()
+    {
+        var request = new UpdateJobRequest
+        {
+            Name = "daily-report",
+            ScheduleType = JobScheduleType.Cron,
+            CronExpression = "garbage",
+            Status = JobStatus.Enabled,
+        };
+
+        Should.Throw<ValidationException>(() => JobValidator.ValidateUpdateRequest(request));
+    }
+
+    [Fact]
     public void ComputeNextRunAt_Cron_ReturnsNextOccurrenceAfterAsOf()
     {
         var job = new Job

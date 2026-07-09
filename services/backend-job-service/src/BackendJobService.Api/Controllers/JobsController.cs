@@ -44,6 +44,37 @@ public class JobsController(IJobService jobService, IExecutionQueryService execu
         }
     }
 
+    [HttpPut("{jobId:long}")]
+    public async Task<ActionResult<JobResponse>> UpdateJob(long jobId, [FromBody] UpdateJobRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await jobService.UpdateJobAsync(jobId, request, cancellationToken));
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+        catch (ValidationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    [HttpDelete("{jobId:long}")]
+    public async Task<IActionResult> DeleteJob(long jobId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await jobService.DeleteJobAsync(jobId, cancellationToken);
+            return NoContent();
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
     [HttpPost("{jobId:long}/tasks")]
     public async Task<ActionResult<JobTaskResponse>> CreateTask(long jobId, [FromBody] CreateJobTaskRequest request, CancellationToken cancellationToken)
     {
