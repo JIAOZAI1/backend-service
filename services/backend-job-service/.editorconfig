@@ -40,6 +40,5 @@ indent_size = 2
 [*.{sln,slnx}]
 indent_style = tab
 
-# EF Core 迁移文件是工具生成代码，不受人工代码风格规则约束
-[**/Migrations/*.cs]
-generated_code = true
+[*.sql]
+indent_size = 4

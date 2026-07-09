@@ -24,7 +24,7 @@ backend-job-service/
 │   ├── BackendJobService.UnitTests/
 │   └── BackendJobService.IntegrationTests/
 ├── configs/
-├── migrations/                                # dotnet ef migrations 生成的迁移文件
+├── migrations/                                # 手写原生 SQL 迁移脚本（golang-migrate 风格），非 EF Core 迁移
 ├── plugins/                                   # 插件 DLL 放置目录，服务启动时扫描加载
 ├── BackendJobService.slnx
 ├── Dockerfile
@@ -64,6 +64,18 @@ make run
 * `appsettings.json`：全局默认值（空的连接串/密码占位）
 * `appsettings.{env}.json`：环境名遵循 `dev / test / staging / prod`
 * `Plugins:Directory`：插件 DLL 所在目录，相对于程序工作目录
+
+## 数据库迁移
+
+迁移脚本是手写的原生 SQL（`migrations/*.up.sql` / `*.down.sql`），不使用 EF Core 自带的迁移机制（`dotnet ef migrations`）——EF Core 仅用作运行时 ORM（查询/写入），schema 变更统一走 SQL 脚本，与仓库里 Go 服务的迁移方式保持一致，跨语言服务用同一套迁移工具（[golang-migrate](https://github.com/golang-migrate/migrate)）管理。
+
+```bash
+export MYSQL_PASSWORD=xxx
+make migrate-up      # 应用所有未执行的迁移
+make migrate-down     # 回滚最近一次迁移
+```
+
+新增表结构变更时，在 `migrations/` 下按 `NNNNNN_description.up.sql` / `.down.sql` 命名新增一对文件（序号递增），同时手动同步更新 `Infrastructure/Persistence/Configurations/` 下对应的 EF Core 实体配置，保证运行时 ORM 模型与实际表结构一致——两者不再由同一份迁移文件自动保证同步，这是放弃 EF Core 迁移机制的代价，修改 schema 时需要格外注意两处一起改。
 
 ## API 说明
 
