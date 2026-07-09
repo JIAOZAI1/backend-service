@@ -1,3 +1,4 @@
+using BackendJobService.Application.Common;
 using BackendJobService.Application.DTOs;
 using BackendJobService.Application.Exceptions;
 using BackendJobService.Application.Interfaces;
@@ -8,6 +9,12 @@ namespace BackendJobService.Application.Services;
 
 public class JobService(IJobRepository jobRepository) : IJobService
 {
+    private static readonly IReadOnlySet<string> _jobSortFields =
+        new HashSet<string>(["id", "name", "status", "createdAt", "updatedAt", "nextRunAt"], StringComparer.OrdinalIgnoreCase);
+
+    private static readonly IReadOnlySet<string> _jobTaskSortFields =
+        new HashSet<string>(["id", "name", "order", "createdAt", "updatedAt"], StringComparer.OrdinalIgnoreCase);
+
     public async Task<JobResponse> CreateJobAsync(CreateJobRequest request, CancellationToken cancellationToken)
     {
         JobValidator.ValidateCreateRequest(request);
@@ -127,16 +134,26 @@ public class JobService(IJobRepository jobRepository) : IJobService
         return JobResponse.FromEntity(job);
     }
 
-    public async Task<List<JobTaskResponse>> ListJobTasksAsync(long jobId, CancellationToken cancellationToken)
+    public async Task<PagedResult<JobTaskResponse>> ListJobTasksAsync(long jobId, int page, int pageSize, string? sortBy, SortOrder sortOrder, CancellationToken cancellationToken)
     {
-        var job = await jobRepository.GetWithTasksByIdAsync(jobId, cancellationToken)
+        _ = await jobRepository.GetByIdAsync(jobId, cancellationToken)
             ?? throw new NotFoundException($"job {jobId} not found");
-        return job.Tasks.OrderBy(t => t.Order).Select(JobTaskResponse.FromEntity).ToList();
+
+        var sort = SortSpec.Resolve(sortBy, sortOrder, _jobTaskSortFields, defaultField: "order");
+        var (items, total) = await jobRepository.ListTasksPagedAsync(jobId, page, pageSize, sort, cancellationToken);
+        return new PagedResult<JobTaskResponse>
+        {
+            Items = items.Select(JobTaskResponse.FromEntity).ToList(),
+            Page = page,
+            PageSize = pageSize,
+            Total = total,
+        };
     }
 
-    public async Task<PagedResult<JobResponse>> ListJobsAsync(int page, int pageSize, CancellationToken cancellationToken)
+    public async Task<PagedResult<JobResponse>> ListJobsAsync(int page, int pageSize, string? sortBy, SortOrder sortOrder, CancellationToken cancellationToken)
     {
-        var (items, total) = await jobRepository.ListPagedAsync(page, pageSize, cancellationToken);
+        var sort = SortSpec.Resolve(sortBy, sortOrder, _jobSortFields, defaultField: "id");
+        var (items, total) = await jobRepository.ListPagedAsync(page, pageSize, sort, cancellationToken);
         return new PagedResult<JobResponse>
         {
             Items = items.Select(JobResponse.FromEntity).ToList(),

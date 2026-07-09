@@ -1,3 +1,4 @@
+using BackendJobService.Application.Common;
 using BackendJobService.Application.DTOs;
 using BackendJobService.Application.Exceptions;
 using BackendJobService.Application.Services;
@@ -24,11 +25,23 @@ public class JobsController(IJobService jobService, IExecutionQueryService execu
     }
 
     [HttpGet]
-    public async Task<ActionResult<PagedResult<JobResponse>>> ListJobs([FromQuery] int page, [FromQuery] int pageSize, CancellationToken cancellationToken)
+    public async Task<ActionResult<PagedResult<JobResponse>>> ListJobs(
+        [FromQuery] int page,
+        [FromQuery] int pageSize,
+        [FromQuery] string? sortBy,
+        [FromQuery] SortOrder sortOrder,
+        CancellationToken cancellationToken)
     {
         var effectivePage = page > 0 ? page : 1;
         var effectivePageSize = pageSize is > 0 and <= 200 ? pageSize : 20;
-        return Ok(await jobService.ListJobsAsync(effectivePage, effectivePageSize, cancellationToken));
+        try
+        {
+            return Ok(await jobService.ListJobsAsync(effectivePage, effectivePageSize, sortBy, sortOrder, cancellationToken));
+        }
+        catch (ValidationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
     }
 
     [HttpGet("{jobId:long}")]
@@ -90,15 +103,27 @@ public class JobsController(IJobService jobService, IExecutionQueryService execu
     }
 
     [HttpGet("{jobId:long}/tasks")]
-    public async Task<ActionResult<List<JobTaskResponse>>> ListTasks(long jobId, CancellationToken cancellationToken)
+    public async Task<ActionResult<PagedResult<JobTaskResponse>>> ListTasks(
+        long jobId,
+        [FromQuery] int page,
+        [FromQuery] int pageSize,
+        [FromQuery] string? sortBy,
+        [FromQuery] SortOrder sortOrder,
+        CancellationToken cancellationToken)
     {
+        var effectivePage = page > 0 ? page : 1;
+        var effectivePageSize = pageSize is > 0 and <= 200 ? pageSize : 20;
         try
         {
-            return Ok(await jobService.ListJobTasksAsync(jobId, cancellationToken));
+            return Ok(await jobService.ListJobTasksAsync(jobId, effectivePage, effectivePageSize, sortBy, sortOrder, cancellationToken));
         }
         catch (NotFoundException ex)
         {
             return NotFound(new { error = ex.Message });
+        }
+        catch (ValidationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
         }
     }
 

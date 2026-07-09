@@ -1,3 +1,4 @@
+using BackendJobService.Application.Common;
 using BackendJobService.Application.DTOs;
 using BackendJobService.Application.Exceptions;
 using BackendJobService.Application.Interfaces;
@@ -263,24 +264,64 @@ public class JobServiceTests
     }
 
     [Fact]
-    public async Task ListJobTasksAsync_ReturnsTasksOrderedByOrder()
+    public async Task ListJobTasksAsync_JobExists_ReturnsPagedTasks()
     {
-        var job = new Job
+        var job = new Job { Id = 1 };
+        var tasks = new List<JobTask>
         {
-            Id = 1,
-            Tasks =
-            [
-                new JobTask { Id = 3, JobId = 1, Name = "third", Order = 3, HandlerType = "H3", PluginAssembly = "p.dll" },
-                new JobTask { Id = 1, JobId = 1, Name = "first", Order = 1, HandlerType = "H1", PluginAssembly = "p.dll" },
-                new JobTask { Id = 2, JobId = 1, Name = "second", Order = 2, HandlerType = "H2", PluginAssembly = "p.dll" },
-            ],
+            new() { Id = 1, JobId = 1, Name = "first", Order = 1, HandlerType = "H1", PluginAssembly = "p.dll" },
+            new() { Id = 2, JobId = 1, Name = "second", Order = 2, HandlerType = "H2", PluginAssembly = "p.dll" },
         };
         _jobRepository
-            .Setup(r => r.GetWithTasksByIdAsync(1, It.IsAny<CancellationToken>()))
+            .Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(job);
+        _jobRepository
+            .Setup(r => r.ListTasksPagedAsync(1, 1, 20, It.IsAny<SortSpec>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((tasks, tasks.Count));
+
+        var result = await _sut.ListJobTasksAsync(1, 1, 20, sortBy: null, SortOrder.Asc, CancellationToken.None);
+
+        result.Items.Select(t => t.Name).ShouldBe(["first", "second"]);
+        result.Total.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task ListJobTasksAsync_JobNotFound_ThrowsNotFoundException()
+    {
+        _jobRepository
+            .Setup(r => r.GetByIdAsync(It.IsAny<long>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Job?)null);
+
+        await Should.ThrowAsync<NotFoundException>(() => _sut.ListJobTasksAsync(999, 1, 20, sortBy: null, SortOrder.Asc, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ListJobTasksAsync_InvalidSortBy_ThrowsValidationException()
+    {
+        var job = new Job { Id = 1 };
+        _jobRepository
+            .Setup(r => r.GetByIdAsync(1, It.IsAny<CancellationToken>()))
             .ReturnsAsync(job);
 
-        var result = await _sut.ListJobTasksAsync(1, CancellationToken.None);
+        await Should.ThrowAsync<ValidationException>(() => _sut.ListJobTasksAsync(1, 1, 20, sortBy: "notAField", SortOrder.Asc, CancellationToken.None));
+    }
 
-        result.Select(t => t.Name).ShouldBe(["first", "second", "third"]);
+    [Fact]
+    public async Task ListJobsAsync_InvalidSortBy_ThrowsValidationException()
+    {
+        await Should.ThrowAsync<ValidationException>(() => _sut.ListJobsAsync(1, 20, sortBy: "notAField", SortOrder.Asc, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ListJobsAsync_ValidSortBy_ReturnsPagedJobs()
+    {
+        var jobs = new List<Job> { new() { Id = 1, Name = "b" }, new() { Id = 2, Name = "a" } };
+        _jobRepository
+            .Setup(r => r.ListPagedAsync(1, 20, It.IsAny<SortSpec>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((jobs, jobs.Count));
+
+        var result = await _sut.ListJobsAsync(1, 20, sortBy: "name", SortOrder.Asc, CancellationToken.None);
+
+        result.Total.ShouldBe(2);
     }
 }
