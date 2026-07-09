@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-job-service
+  namespace: default
+  labels:
+    app: backend-job-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend-job-service
+  template:
+    metadata:
+      labels:
+        app: backend-job-service
+    spec:
+      containers:
+        - name: backend-job-service
+          image: ghcr.io/jiaozai1/backend-job-service:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: ASPNETCORE_ENVIRONMENT
+              value: "dev"
+            - name: ConnectionStrings__MySql
+              valueFrom:
+                secretKeyRef:
+                  name: backend-job-service-secrets
+                  key: mysql-connection-string
+            - name: RabbitMq__Host
+              value: "rabbitmq.rabbitmq.svc.cluster.local"
+            - name: RabbitMq__Port
+              value: "5672"
+            - name: RabbitMq__Username
+              valueFrom:
+                secretKeyRef:
+                  name: backend-job-service-secrets
+                  key: rabbitmq-username
+            - name: RabbitMq__Password
+              valueFrom:
+                secretKeyRef:
+                  name: backend-job-service-secrets
+                  key: rabbitmq-password
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi

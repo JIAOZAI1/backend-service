@@ -1,0 +1,45 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+[*.cs]
+indent_size = 4
+
+# 命名规范：见微服务项目开发规范.md 第 7.5.2 节
+dotnet_naming_rule.private_fields_should_be_camel_case_with_underscore.severity = suggestion
+dotnet_naming_rule.private_fields_should_be_camel_case_with_underscore.symbols = private_fields
+dotnet_naming_rule.private_fields_should_be_camel_case_with_underscore.style = underscore_prefix_camel_case
+
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+
+dotnet_naming_style.underscore_prefix_camel_case.capitalization = camel_case
+dotnet_naming_style.underscore_prefix_camel_case.required_prefix = _
+
+dotnet_naming_rule.interfaces_should_be_i_prefixed.severity = suggestion
+dotnet_naming_rule.interfaces_should_be_i_prefixed.symbols = interfaces
+dotnet_naming_rule.interfaces_should_be_i_prefixed.style = i_prefix
+
+dotnet_naming_symbols.interfaces.applicable_kinds = interface
+
+dotnet_naming_style.i_prefix.capitalization = pascal_case
+dotnet_naming_style.i_prefix.required_prefix = I
+
+csharp_using_directive_placement = outside_namespace
+csharp_prefer_braces = true
+csharp_style_namespace_declarations = file_scoped:suggestion
+
+[*.{json,yml,yaml}]
+indent_size = 2
+
+[*.{sln,slnx}]
+indent_style = tab
+
+# EF Core 迁移文件是工具生成代码，不受人工代码风格规则约束
+[**/Migrations/*.cs]
+generated_code = true

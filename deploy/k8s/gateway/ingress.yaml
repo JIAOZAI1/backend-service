@@ -23,3 +23,10 @@ spec:
                 name: sso-service
                 port:
                   name: http
+          - path: /backend-job-service
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-job-service
+                port:
+                  name: http
