@@ -23,6 +23,13 @@ public class JobExecutionRepository(JobDbContext db) : IJobExecutionRepository
             .Include(e => e.TaskExecutions)
             .ToListAsync(cancellationToken);
 
+    public Task<JobExecution?> GetLatestByJobIdAsync(long jobId, CancellationToken cancellationToken) =>
+        db.JobExecutions
+            .Where(e => e.JobId == jobId)
+            .OrderByDescending(e => e.TriggeredAt)
+            .Include(e => e.TaskExecutions)
+            .FirstOrDefaultAsync(cancellationToken);
+
     public async Task AddAsync(JobExecution execution, CancellationToken cancellationToken) =>
         await db.JobExecutions.AddAsync(execution, cancellationToken);
 

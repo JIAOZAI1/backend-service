@@ -26,6 +26,25 @@ public class JobExecutionResponse
     };
 }
 
+/// <summary>
+/// 供前端轮询的作业状态聚合视图：作业本身状态 + 最近一次执行（含各 Task 状态），一次请求拿全。
+/// </summary>
+public class JobStatusResponse
+{
+    public long JobId { get; init; }
+    public JobStatus JobStatus { get; init; }
+    public DateTime? NextRunAt { get; init; }
+    public JobExecutionResponse? LatestExecution { get; init; }
+
+    public static JobStatusResponse FromEntities(Job job, JobExecution? latestExecution) => new()
+    {
+        JobId = job.Id,
+        JobStatus = job.Status,
+        NextRunAt = job.NextRunAt,
+        LatestExecution = latestExecution is null ? null : JobExecutionResponse.FromEntity(latestExecution),
+    };
+}
+
 public class TaskExecutionResponse
 {
     public long Id { get; init; }

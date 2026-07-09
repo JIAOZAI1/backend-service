@@ -90,6 +90,7 @@ Base path: `/backend-job-service/api/v1`
 | POST | `/backend-job-service/api/v1/jobs/{jobId}/tasks` | 在作业下新建任务（绑定插件 HandlerType） |
 | GET  | `/backend-job-service/api/v1/jobs/{jobId}/tasks` | 查询作业下的任务列表 |
 | GET  | `/backend-job-service/api/v1/jobs/{jobId}/executions` | 查询作业的执行历史（`?limit=` 默认 20，最大 200） |
+| GET  | `/backend-job-service/api/v1/jobs/{jobId}/status` | 查询作业状态聚合视图（作业状态 + 最近一次执行及其 Task 状态），供前端轮询 |
 | GET  | `/backend-job-service/api/v1/executions/{executionId}` | 查询单次执行详情（含每个 Task 的执行状态） |
 
 ## 可靠性机制（当前版本范围）

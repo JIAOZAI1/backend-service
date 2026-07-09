@@ -4,7 +4,7 @@ using BackendJobService.Application.Interfaces;
 
 namespace BackendJobService.Application.Services;
 
-public class ExecutionQueryService(IJobExecutionRepository executionRepository) : IExecutionQueryService
+public class ExecutionQueryService(IJobExecutionRepository executionRepository, IJobRepository jobRepository) : IExecutionQueryService
 {
     public async Task<JobExecutionResponse> GetExecutionAsync(long executionId, CancellationToken cancellationToken)
     {
@@ -17,5 +17,13 @@ public class ExecutionQueryService(IJobExecutionRepository executionRepository) 
     {
         var executions = await executionRepository.ListByJobIdAsync(jobId, limit, cancellationToken);
         return executions.Select(JobExecutionResponse.FromEntity).ToList();
+    }
+
+    public async Task<JobStatusResponse> GetJobStatusAsync(long jobId, CancellationToken cancellationToken)
+    {
+        var job = await jobRepository.GetByIdAsync(jobId, cancellationToken)
+            ?? throw new NotFoundException($"job {jobId} not found");
+        var latestExecution = await executionRepository.GetLatestByJobIdAsync(jobId, cancellationToken);
+        return JobStatusResponse.FromEntities(job, latestExecution);
     }
 }

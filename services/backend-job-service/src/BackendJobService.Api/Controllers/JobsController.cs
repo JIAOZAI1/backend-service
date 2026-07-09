@@ -69,4 +69,17 @@ public class JobsController(IJobService jobService, IExecutionQueryService execu
         var effectiveLimit = limit is > 0 and <= 200 ? limit : 20;
         return Ok(await executionQueryService.ListExecutionsByJobAsync(jobId, effectiveLimit, cancellationToken));
     }
+
+    [HttpGet("{jobId:long}/status")]
+    public async Task<ActionResult<JobStatusResponse>> GetJobStatus(long jobId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await executionQueryService.GetJobStatusAsync(jobId, cancellationToken));
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
 }
