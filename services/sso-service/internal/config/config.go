@@ -60,6 +60,7 @@ func Load(env string) (*Config, error) {
 
 	// yaml 模板中的 ${VAR} 占位符由运行时环境变量展开，敏感值不落盘到配置文件
 	cfg.MySQL.DSN = os.ExpandEnv(cfg.MySQL.DSN)
+	cfg.Redis.Addr = os.ExpandEnv(cfg.Redis.Addr)
 	cfg.Redis.Password = os.ExpandEnv(cfg.Redis.Password)
 	cfg.JWT.Secret = os.ExpandEnv(cfg.JWT.Secret)
 

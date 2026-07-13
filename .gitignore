@@ -1,0 +1,4 @@
+# 真实密钥文件禁止入库（规范第 15 章），仅保留 secret-example.yaml 模板
+deploy/**/secret.yaml
+deploy/**/secret-*.yaml
+!deploy/**/secret-example.yaml

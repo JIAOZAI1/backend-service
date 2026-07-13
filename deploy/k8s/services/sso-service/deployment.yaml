@@ -25,16 +25,48 @@ spec:
           env:
             - name: SSO_APP_ENV
               value: "dev"
+            # MySQL / Redis 统一从 config-dev-secret 注入（见 deploy/k8s/base/secret-example.yaml）
+            - name: MYSQL_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: config-dev-secret
+                  key: mysql-host
+            - name: MYSQL_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: config-dev-secret
+                  key: mysql-port
+            - name: MYSQL_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: config-dev-secret
+                  key: mysql-database
+            - name: MYSQL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: config-dev-secret
+                  key: mysql-username
             - name: MYSQL_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: sso-service-secrets
+                  name: config-dev-secret
                   key: mysql-password
+            - name: REDIS_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: config-dev-secret
+                  key: redis-host
+            - name: REDIS_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: config-dev-secret
+                  key: redis-port
             - name: REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: sso-service-secrets
+                  name: config-dev-secret
                   key: redis-password
+            # 服务私有密钥仍走各自的 secret
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:

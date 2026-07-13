@@ -25,24 +25,59 @@ spec:
           env:
             - name: ASPNETCORE_ENVIRONMENT
               value: "dev"
-            - name: ConnectionStrings__MySql
+            # MySQL / RabbitMQ 统一从 config-dev-secret 注入（见 deploy/k8s/base/secret-example.yaml）。
+            # MYSQL_* 仅用于拼接下方 ConnectionStrings__MySql，需定义在其之前。
+            - name: MYSQL_HOST
               valueFrom:
                 secretKeyRef:
-                  name: backend-job-service-secrets
-                  key: mysql-connection-string
+                  name: config-dev-secret
+                  key: mysql-host
+            - name: MYSQL_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: config-dev-secret
+                  key: mysql-port
+            - name: MYSQL_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: config-dev-secret
+                  key: mysql-database
+            - name: MYSQL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: config-dev-secret
+                  key: mysql-username
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: config-dev-secret
+                  key: mysql-password
+            - name: ConnectionStrings__MySql
+              value: "Server=$(MYSQL_HOST);Port=$(MYSQL_PORT);Database=$(MYSQL_DATABASE);User=$(MYSQL_USERNAME);Password=$(MYSQL_PASSWORD);"
             - name: RabbitMq__Host
-              value: "rabbitmq.rabbitmq.svc.cluster.local"
+              valueFrom:
+                secretKeyRef:
+                  name: config-dev-secret
+                  key: rabbitmq-host
             - name: RabbitMq__Port
-              value: "5672"
+              valueFrom:
+                secretKeyRef:
+                  name: config-dev-secret
+                  key: rabbitmq-port
+            - name: RabbitMq__VirtualHost
+              valueFrom:
+                secretKeyRef:
+                  name: config-dev-secret
+                  key: rabbitmq-vhost
             - name: RabbitMq__Username
               valueFrom:
                 secretKeyRef:
-                  name: backend-job-service-secrets
+                  name: config-dev-secret
                   key: rabbitmq-username
             - name: RabbitMq__Password
               valueFrom:
                 secretKeyRef:
-                  name: backend-job-service-secrets
+                  name: config-dev-secret
                   key: rabbitmq-password
           readinessProbe:
             httpGet:
