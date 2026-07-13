@@ -12,6 +12,24 @@
 
 完整的路由前缀 ↔ 服务映射见 [docs/route-mapping.md](../../../docs/route-mapping.md)。
 
+[ingress.yaml](ingress.yaml) 拆分为两个 Ingress：
+
+| Ingress | 中间件 | 路由 |
+| --- | --- | --- |
+| `backend-gateway-public` | CORS | `/sso-service`（登录/注册等必须匿名可达，服务内部自带 `RequireAuth`） |
+| `backend-gateway-protected` | CORS + 登录校验 | `/backend-job-service` 及所有后续业务服务 |
+
+## 登录校验（ForwardAuth）
+
+受保护路由统一在网关层校验登录 token（[auth-middleware.yaml](auth-middleware.yaml)，`Middleware` 资源 `gateway-auth`）：
+
+1. 网关把每个请求的头转发给 sso-service 的集群内部端点 `GET /internal/auth/verify`；
+2. sso-service 复用自身逻辑做 JWT 验签 + Redis 黑名单检查（登出即时生效）；
+3. 校验通过（204）时，网关**删除客户端自带的同名头**，把校验端点返回的 `X-User-Id`/`X-Username` 写入原请求转发给后端——后端服务直接信任这两个头，无需解析 JWT、不持有 JWT 密钥；
+4. 校验失败时，sso-service 的 401 响应原样返回给客户端。
+
+注意：这两个头只有**经网关转发**的请求才可信；集群内直连服务不经过校验，应通过 NetworkPolicy 或访问约定禁止绕过网关调用业务服务。
+
 ## CORS
 
 跨域策略统一在网关层配置（[cors-middleware.yaml](cors-middleware.yaml)，`Middleware` 资源 `gateway-cors`），通过 `traefik.ingress.kubernetes.io/router.middlewares` 注解挂载到 Ingress。所有经网关转发的服务共用同一份 CORS 策略，**服务自身不再重复处理 CORS**——两处都加会导致响应重复 `Access-Control-Allow-Origin` 头，浏览器会拒绝。
@@ -27,7 +45,7 @@
 
 ## 新增服务接入
 
-在 [ingress.yaml](ingress.yaml) 的 `spec.rules[0].http.paths` 下追加一条：
+在 [ingress.yaml](ingress.yaml) 中 **`backend-gateway-protected`** 的 `spec.rules[0].http.paths` 下追加一条（默认所有新服务都需要登录；确需匿名访问的路由才加到 `backend-gateway-public`）：
 
 ```yaml
 - path: /<domain>-service
@@ -39,13 +57,18 @@
         name: http
 ```
 
-同时更新 [docs/route-mapping.md](../../../docs/route-mapping.md)。
+同时更新 [docs/route-mapping.md](../../../docs/route-mapping.md)。新服务从 `X-User-Id`/`X-Username` 请求头读取当前用户（参考 backend-job-service 的 `GatewayUser`），无需自行解析 JWT。
 
 ## 部署
 
 ```bash
 kubectl apply -f deploy/k8s/gateway/cors-middleware.yaml
+kubectl apply -f deploy/k8s/gateway/auth-middleware.yaml
 kubectl apply -f deploy/k8s/gateway/ingress.yaml
+
+# 首次从单一 backend-gateway 迁移到 public/protected 拆分时，
+# 必须删除旧 Ingress，否则旧的无鉴权路由仍然生效：
+kubectl delete ingress backend-gateway -n default --ignore-not-found
 ```
 
 ## 本地验证（dev，未配置真实 DNS 时）

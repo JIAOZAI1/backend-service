@@ -76,6 +76,12 @@ Base path: `/sso-service/api/v1`
 | POST   | `/sso-service/api/v1/users/:userID/roles` | 给指定用户分配角色（body: `{"roleName": "..."}`） |
 | DELETE | `/sso-service/api/v1/users/:userID/roles/:roleName` | 移除指定用户的某个角色 |
 
+#### 内部接口（不经网关暴露）
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/internal/auth/verify` | 供网关 ForwardAuth 调用（见 [deploy/k8s/gateway/auth-middleware.yaml](../../deploy/k8s/gateway/auth-middleware.yaml)）：校验 `Authorization: Bearer <access token>` 并查 Redis 黑名单，通过返回 204 及 `X-User-Id`/`X-Username` 响应头，失败返回 401。与 `/health` 一样不带网关前缀，仅集群内直连本服务可达 |
+
 角色数据每次请求都从数据库实时查询，不依赖 JWT 中的快照，权限变更（分配/移除角色）对已签发的 access token 立即生效，无需重新登录。
 
 首个 `admin` 用户需手动在数据库中写入 `user_roles`（没有任何用户天生拥有 `admin` 角色，这是有意的引导步骤，避免自举出无法收回的初始权限）：

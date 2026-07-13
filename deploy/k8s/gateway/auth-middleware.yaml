@@ -1,0 +1,19 @@
+# 网关统一登录校验：ForwardAuth 把请求转给 sso-service 的校验端点（JWT 验签 + Redis 黑名单），
+# 2xx 放行，否则把 sso-service 的 401 响应原样返回给客户端。
+# 只挂载到受保护的 Ingress（backend-gateway-protected，见 ingress.yaml）；
+# /sso-service 路由不挂——登录/注册/刷新必须匿名可达，且 sso-service 内部已有 RequireAuth。
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: gateway-auth
+  namespace: default
+spec:
+  forwardAuth:
+    # 直连 sso-service 的 K8s Service（不经网关），端点不带 /sso-service 前缀，
+    # 与 /health 同级，仅集群内可达（见 sso-service internal/handler/router.go）。
+    address: http://sso-service.default.svc.cluster.local:8080/internal/auth/verify
+    authResponseHeaders:
+      # 网关会先删除原请求中客户端自带的同名头，再用校验端点的响应头覆盖写入，
+      # 因此后端服务收到的 X-User-Id / X-Username 不可能被客户端伪造。
+      - X-User-Id
+      - X-Username

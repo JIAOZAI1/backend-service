@@ -1,11 +1,16 @@
 # 统一后端服务网关：按 host + 路由前缀转发到各微服务，不 strip 前缀（原样转发给后端）。
 # 规则见微服务项目开发规范.md 第 16.3 节，服务与路由的对应关系见 docs/route-mapping.md。
 #
-# 新增服务时，在 rules[0].http.paths 下追加一条 path 规则即可，无需改动其他服务的规则。
+# 拆分为两个 Ingress：
+#   - backend-gateway-public：匿名可达路由（sso-service 的登录/注册/刷新等；其内部
+#     已有 RequireAuth 自行保护需登录的接口），只挂 CORS 中间件。
+#   - backend-gateway-protected：所有业务服务，挂 CORS + gateway-auth（ForwardAuth
+#     登录校验，见 auth-middleware.yaml）。新增服务默认加到 protected 的 paths 下，
+#     即自动获得登录校验，无需服务自己解析 JWT。
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: backend-gateway
+  name: backend-gateway-public
   namespace: default
   annotations:
     # 挂载统一 CORS Middleware（见 cors-middleware.yaml），跨域策略只在网关配置一次
@@ -23,6 +28,21 @@ spec:
                 name: sso-service
                 port:
                   name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: backend-gateway-protected
+  namespace: default
+  annotations:
+    # CORS + 登录校验；Traefik 按声明顺序执行，CORS 在前保证 401 响应也带跨域头
+    traefik.ingress.kubernetes.io/router.middlewares: default-gateway-cors@kubernetescrd,default-gateway-auth@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: lead-mind-backend.dev.com
+      http:
+        paths:
           - path: /backend-job-service
             pathType: Prefix
             backend:
