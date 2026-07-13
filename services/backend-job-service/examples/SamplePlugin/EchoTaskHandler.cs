@@ -7,6 +7,9 @@ namespace SamplePlugin;
 /// 示例插件：用于端到端联调验证反射加载与执行链路，不代表真实业务逻辑。
 /// OutputJson 必须是合法 JSON（数据库 output_json 列是原生 JSON 类型）。
 /// </summary>
+[TaskPlugin("sample-echo",
+    Description = "示例插件：原样回显任务参数，用于联调验证插件加载与执行链路",
+    Version = "1.0.0")]
 public class EchoTaskHandler : ITaskHandler
 {
     public Task<TaskResult> ExecuteAsync(TaskExecutionContext context, CancellationToken cancellationToken)

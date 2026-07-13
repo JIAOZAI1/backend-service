@@ -54,6 +54,20 @@ spec:
                   key: mysql-password
             - name: ConnectionStrings__MySql
               value: "Server=$(MYSQL_HOST);Port=$(MYSQL_PORT);Database=$(MYSQL_DATABASE);User=$(MYSQL_USERNAME);Password=$(MYSQL_PASSWORD);"
+            # 内置 MySQL 插件（建库/建用户）的管理员连接串：账号与业务账号分开，
+            # MYSQL_ADMIN_* 仅用于拼接下方 DSN，需定义在其之前
+            - name: MYSQL_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: config-dev-secret
+                  key: mysql-admin-username
+            - name: MYSQL_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: config-dev-secret
+                  key: mysql-admin-password
+            - name: JOB_PLUGIN_MYSQL_ADMIN_DSN
+              value: "Server=$(MYSQL_HOST);Port=$(MYSQL_PORT);User ID=$(MYSQL_ADMIN_USERNAME);Password=$(MYSQL_ADMIN_PASSWORD);"
             - name: RabbitMq__Host
               valueFrom:
                 secretKeyRef:

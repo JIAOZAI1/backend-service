@@ -8,6 +8,7 @@
     <Project Path="src/BackendJobService.Contracts/BackendJobService.Contracts.csproj" />
     <Project Path="src/BackendJobService.Domain/BackendJobService.Domain.csproj" />
     <Project Path="src/BackendJobService.Infrastructure/BackendJobService.Infrastructure.csproj" />
+    <Project Path="src/BackendJobService.Plugins/BackendJobService.Plugins.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/BackendJobService.IntegrationTests/BackendJobService.IntegrationTests.csproj" />

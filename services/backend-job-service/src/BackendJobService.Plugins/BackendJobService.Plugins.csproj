@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\BackendJobService.Contracts\BackendJobService.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MySqlConnector" Version="2.4.0" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- 插件以独立 AssemblyLoadContext 动态加载：构建/发布产物需要带上 NuGet 依赖
+         （如 MySqlConnector.dll）和 .deps.json，供宿主的 AssemblyDependencyResolver 解析 -->
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="BackendJobService.UnitTests" />
+  </ItemGroup>
+
+</Project>

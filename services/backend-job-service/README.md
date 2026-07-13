@@ -19,7 +19,9 @@ backend-job-service/
 │   ├── BackendJobService.Infrastructure/      # 基础设施层：EF Core、RabbitMQ、插件加载器、
 │   │                                            #   JobSchedulerHostedService（Job Center）、
 │   │                                            #   TaskWorkerHostedService（执行 Worker）
-│   └── BackendJobService.Contracts/           # ITaskHandler 插件接口，插件项目只需引用这一个项目
+│   ├── BackendJobService.Contracts/           # ITaskHandler 插件接口 + TaskPlugin 元数据特性，
+│   │                                            #   插件项目只需引用这一个项目
+│   └── BackendJobService.Plugins/             # 内置插件库：MySQL 建库/建用户等运维类 Handler
 ├── tests/
 │   ├── BackendJobService.UnitTests/
 │   └── BackendJobService.IntegrationTests/
@@ -103,9 +105,10 @@ Base path: `/backend-job-service/api/v1`
 
 ## 插件开发
 
-插件项目只需引用 `BackendJobService.Contracts`，实现 `ITaskHandler`：
+插件项目只需引用 `BackendJobService.Contracts`，实现 `ITaskHandler`，并用 `TaskPlugin` 特性声明插件元数据（名称/描述/版本/作者，宿主加载插件时会读取并打印到日志）：
 
 ```csharp
+[TaskPlugin("my-task", Description = "插件用途一句话描述", Version = "1.0.0")]
 public class MyTaskHandler : ITaskHandler
 {
     public async Task<TaskResult> ExecuteAsync(TaskExecutionContext context, CancellationToken cancellationToken)
@@ -120,7 +123,20 @@ public class MyTaskHandler : ITaskHandler
 
 `OutputJson` 必须是合法 JSON——`task_executions.output_json` 是数据库原生 JSON 列，写入非法 JSON 会导致保存失败；Worker 侧对此做了防御性兜底（非法 JSON 会被包一层降级保存并标注警告），但插件应自己保证输出合法。
 
-参考实现见 [examples/SamplePlugin](../backend-job-service/examples/SamplePlugin)（`EchoTaskHandler`），可直接 `dotnet build examples/SamplePlugin -c Release` 编译后复制到 `plugins/` 联调。插件项目只引用 `BackendJobService.Contracts`，其依赖（含 `Contracts.dll` 本身）由插件加载器通过 `AssemblyDependencyResolver` 自动从插件所在目录解析，无需手动复制额外的 DLL。
+参考实现见 [examples/SamplePlugin](../backend-job-service/examples/SamplePlugin)（`EchoTaskHandler`），可直接 `dotnet build examples/SamplePlugin -c Release` 编译后复制到 `plugins/` 联调。插件项目只引用 `BackendJobService.Contracts`，其依赖（含 `Contracts.dll` 本身）由插件加载器通过 `AssemblyDependencyResolver` 自动从插件所在目录解析，无需手动复制额外的 DLL。带 NuGet 依赖的插件项目需设置 `<EnableDynamicLoading>true</EnableDynamicLoading>` 并用 `dotnet publish` 产出（依赖 DLL 会一起进输出目录）。
+
+### 内置插件（BackendJobService.Plugins）
+
+`src/BackendJobService.Plugins` 是随服务维护的内置插件库，Docker 镜像构建时会发布到 `/app/plugins`；本地联调执行 `make publish-plugins` 发布到 `plugins/` 目录。`pluginAssembly` 填 `BackendJobService.Plugins.dll`。
+
+执行 MySQL 管理操作需要管理员连接串，统一从环境变量 `JOB_PLUGIN_MYSQL_ADMIN_DSN` 读取（MySqlConnector 连接串格式，如 `Server=...;Port=3306;User ID=...;Password=...`），由部署环境注入，禁止写入任务参数落库。
+
+| Handler（handlerType） | 说明 | parameters_json |
+| --- | --- | --- |
+| `BackendJobService.Plugins.MySql.CreateDatabaseHandler` | 创建数据库（幂等，已存在则跳过） | `databaseName`（必填）、`charset`（默认 utf8mb4）、`collation`（可选） |
+| `BackendJobService.Plugins.MySql.CreateUserHandler` | 创建用户并可选授权（幂等，已存在则跳过且不改密码） | `username`/`password`（必填）、`host`（默认 `%`）、`grantDatabase`（可选）、`privileges`（默认 `["ALL PRIVILEGES"]`，白名单校验） |
+
+安全约定：库名/用户名/host/权限均做白名单校验（非法即失败，不拼接进 SQL）；新用户密码由调用方生成并自行保管，执行结果 `output_json` 不回显密码。
 
 ## 健康检查地址
 

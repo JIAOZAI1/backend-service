@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\src\BackendJobService.Domain\BackendJobService.Domain.csproj" />
     <ProjectReference Include="..\..\src\BackendJobService.Infrastructure\BackendJobService.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\BackendJobService.Contracts\BackendJobService.Contracts.csproj" />
+    <ProjectReference Include="..\..\src\BackendJobService.Plugins\BackendJobService.Plugins.csproj" />
   </ItemGroup>
 
 </Project>

@@ -40,6 +40,15 @@ public class TaskHandlerLoader : ITaskHandlerLoader
         var instance = Activator.CreateInstance(type)
             ?? throw new InvalidOperationException($"failed to instantiate '{handlerType}' (missing public parameterless constructor?)");
 
+        // TaskPluginAttribute 定义在 Contracts 里且 Contracts 被放行到默认加载上下文，
+        // 因此跨 ALC 读取插件类型上的特性时类型一致，可以直接强类型读取
+        if (type.GetCustomAttribute<TaskPluginAttribute>() is { } metadata)
+        {
+            _logger.LogInformation(
+                "Plugin handler {HandlerType} metadata: {PluginName} v{PluginVersion} - {PluginDescription}",
+                handlerType, metadata.Name, metadata.Version, metadata.Description);
+        }
+
         return (ITaskHandler)instance;
     }
 
