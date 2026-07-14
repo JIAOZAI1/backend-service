@@ -17,7 +17,7 @@ sso-service/
 ├── pkg/jwtutil/            # JWT 签发与解析，可被其他服务安全引用
 ├── tests/                 # 集成测试
 ├── configs/                # 服务级配置模板（app.<env>.yaml）
-├── migrations/              # 数据库迁移脚本（用户表、角色表）
+├── migrations/              # 数据库迁移脚本（用户表、角色表、用户审核字段）
 ├── Dockerfile
 ├── Makefile
 ├── service.yaml
@@ -35,7 +35,7 @@ export SSO_APP_ENV=dev   # 对应 configs/app.dev.yaml
 make run
 ```
 
-依赖 MySQL 8.x（`sso_db`）与 Redis 6.x，需自行准备并保证 `configs/app.dev.yaml` 中的连接地址可达。
+依赖 MySQL 8.x 与 Redis 6.x，需自行准备并保证 `configs/app.dev.yaml` 中的连接地址可达。仓库内所有服务共用同一个数据库 `sys_db`，各服务的表通过表名区分（本服务为 `users`/`roles`/`user_roles`），数据库名从环境变量 `MYSQL_DATABASE` 注入（见 [deploy/k8s/services/sso-service/deployment.yaml](../../deploy/k8s/services/sso-service/deployment.yaml)，与 admin-service/backend-job-service 共用同一份 `config-dev-secret`）。
 
 ## 配置说明
 
@@ -81,6 +81,10 @@ Base path: `/sso-service/api/v1`
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/internal/auth/verify` | 供网关 ForwardAuth 调用（见 [deploy/k8s/gateway/auth-middleware.yaml](../../deploy/k8s/gateway/auth-middleware.yaml)）：校验 `Authorization: Bearer <access token>` 并查 Redis 黑名单，通过返回 204 及 `X-User-Id`/`X-Username`/`X-User-Roles`（逗号分隔的角色名，实时查库、不依赖 JWT 快照）响应头，失败返回 401。与 `/health` 一样不带网关前缀，仅集群内直连本服务可达 |
+| GET | `/internal/users/{userID}` | 供 admin-service 审核开户流程集群内直连调用：返回用户基本信息（`id`/`username`/`email`/`status`/`reviewStatus`），不存在返回 404 |
+| PUT | `/internal/users/{userID}/review` | 供 admin-service 审核通过后调用（body: `{"reviewedBy": <管理员用户ID>}`）：把该用户 `review_status` 置为 `approved` 并记录 `reviewed_by`，幂等（重复调用不报错），不存在返回 404 |
+
+以上两个内部用户接口均不做角色校验，仅信任集群内可信调用方（与 `/internal/auth/verify` 同一设计），不经网关暴露。
 
 角色数据每次请求都从数据库实时查询，不依赖 JWT 中的快照，权限变更（分配/移除角色）对已签发的 access token 立即生效，无需重新登录。
 
@@ -105,6 +109,10 @@ SELECT <目标用户ID>, id FROM roles WHERE name = 'admin';
 - 迁移脚本预置两个角色：`default`（新用户注册时自动分配）、`admin`（角色管理接口的访问门槛）
 - 角色名不做大小写或格式约束，只要求 2-64 字符、全局唯一
 
+### 用户审核字段说明
+
+`users` 表额外维护开户审核状态：`review_status`（`pending`/`approved`，新用户注册默认 `pending`）与 `reviewed_by`（审核管理员的用户 ID，未审核时为空）。审核本身由 admin-service 的审核开户流程编排（生成租户、触发建库建用户作业），本服务只被动接受 [`PUT /internal/users/{userID}/review`](#内部接口不经网关暴露) 调用来落地审核结果，不感知租户/作业相关的业务细节。
+
 ## 健康检查地址
 
 ```
@@ -125,5 +133,5 @@ make docker-build
 
 ## 依赖说明
 
-* MySQL（用户数据持久化，数据库名 `sso_db`）
+* MySQL（用户数据持久化，共用 `sys_db`）
 * Redis（refresh token 存储与 access token 黑名单）

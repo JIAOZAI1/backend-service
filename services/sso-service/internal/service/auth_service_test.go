@@ -58,6 +58,16 @@ func (f *fakeUserRepo) FindByID(_ context.Context, id uint64) (*model.User, erro
 	return nil, repository.ErrUserNotFound
 }
 
+func (f *fakeUserRepo) ApproveReview(_ context.Context, id uint64, reviewedBy uint64) error {
+	u, ok := f.byID[id]
+	if !ok {
+		return repository.ErrUserNotFound
+	}
+	u.ReviewStatus = model.UserReviewStatusApproved
+	u.ReviewedBy = &reviewedBy
+	return nil
+}
+
 type fakeTokenRepo struct {
 	refresh   map[string]uint64
 	blacklist map[string]bool

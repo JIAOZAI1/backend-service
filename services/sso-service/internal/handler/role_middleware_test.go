@@ -14,7 +14,7 @@ import (
 )
 
 func TestRoleRoutes_RequireAuth(t *testing.T) {
-	router := handler.NewRouter(nil, nil, jwtutil.NewIssuer("secret", "issuer"), noopBlacklist{}, fakeRoleLister{})
+	router := handler.NewRouter(nil, nil, nil, jwtutil.NewIssuer("secret", "issuer"), noopBlacklist{}, fakeRoleLister{})
 
 	req := httptest.NewRequest(http.MethodGet, "/sso-service/api/v1/roles", nil)
 	w := httptest.NewRecorder()
@@ -28,7 +28,7 @@ func TestRoleRoutes_RejectNonAdmin(t *testing.T) {
 	lister := fakeRoleLister{roles: map[uint64][]model.Role{
 		1: {{ID: 1, Name: model.DefaultRoleName}},
 	}}
-	router := handler.NewRouter(nil, nil, issuer, noopBlacklist{}, lister)
+	router := handler.NewRouter(nil, nil, nil, issuer, noopBlacklist{}, lister)
 
 	token, err := issuer.Issue(1, "alice", time.Minute, "jti-1")
 	assert.NoError(t, err)
@@ -46,7 +46,7 @@ func TestRoleRoutes_AllowAdmin(t *testing.T) {
 	lister := fakeRoleLister{roles: map[uint64][]model.Role{
 		1: {{ID: 2, Name: "admin"}},
 	}}
-	router := handler.NewRouter(nil, nil, issuer, noopBlacklist{}, lister)
+	router := handler.NewRouter(nil, nil, nil, issuer, noopBlacklist{}, lister)
 
 	token, err := issuer.Issue(1, "alice", time.Minute, "jti-2")
 	assert.NoError(t, err)

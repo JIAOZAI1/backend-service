@@ -21,7 +21,7 @@ func (s stubBlacklist) IsAccessTokenBlacklisted(_ context.Context, _ string) (bo
 }
 
 func TestVerifyRoute_MissingToken(t *testing.T) {
-	router := handler.NewRouter(nil, nil, jwtutil.NewIssuer("secret", "issuer"), noopBlacklist{}, fakeRoleLister{})
+	router := handler.NewRouter(nil, nil, nil, jwtutil.NewIssuer("secret", "issuer"), noopBlacklist{}, fakeRoleLister{})
 
 	req := httptest.NewRequest(http.MethodGet, "/internal/auth/verify", nil)
 	w := httptest.NewRecorder()
@@ -35,7 +35,7 @@ func TestVerifyRoute_ValidToken(t *testing.T) {
 	lister := fakeRoleLister{roles: map[uint64][]model.Role{
 		1: {{ID: 1, Name: model.DefaultRoleName}, {ID: 2, Name: "admin"}},
 	}}
-	router := handler.NewRouter(nil, nil, issuer, noopBlacklist{}, lister)
+	router := handler.NewRouter(nil, nil, nil, issuer, noopBlacklist{}, lister)
 
 	token, err := issuer.Issue(1, "alice", time.Minute, "jti-verify-1")
 	assert.NoError(t, err)
@@ -56,7 +56,7 @@ func TestVerifyRoute_ValidToken(t *testing.T) {
 
 func TestVerifyRoute_BlacklistedToken(t *testing.T) {
 	issuer := jwtutil.NewIssuer("secret", "issuer")
-	router := handler.NewRouter(nil, nil, issuer, stubBlacklist{blacklisted: true}, fakeRoleLister{})
+	router := handler.NewRouter(nil, nil, nil, issuer, stubBlacklist{blacklisted: true}, fakeRoleLister{})
 
 	token, err := issuer.Issue(1, "alice", time.Minute, "jti-verify-2")
 	assert.NoError(t, err)

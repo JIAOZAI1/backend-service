@@ -16,6 +16,7 @@ type UserRepository interface {
 	FindByUsername(ctx context.Context, username string) (*model.User, error)
 	FindByEmail(ctx context.Context, email string) (*model.User, error)
 	FindByID(ctx context.Context, id uint64) (*model.User, error)
+	ApproveReview(ctx context.Context, id uint64, reviewedBy uint64) error
 }
 
 type userRepository struct {
@@ -64,4 +65,19 @@ func (r *userRepository) FindByID(ctx context.Context, id uint64) (*model.User, 
 		return nil, err
 	}
 	return &u, nil
+}
+
+// ApproveReview 幂等：重复调用同一个已审核用户不会报错，只是重复写入相同的值。
+func (r *userRepository) ApproveReview(ctx context.Context, id uint64, reviewedBy uint64) error {
+	result := r.db.WithContext(ctx).Model(&model.User{}).Where("id = ?", id).Updates(map[string]any{
+		"review_status": model.UserReviewStatusApproved,
+		"reviewed_by":   reviewedBy,
+	})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrUserNotFound
+	}
+	return nil
 }

@@ -58,7 +58,10 @@ func main() {
 	roleService := service.NewRoleService(roleRepo, userRepo)
 	roleHandler := handler.NewRoleHandler(roleService)
 
-	router := handler.NewRouter(authHandler, roleHandler, jwtIssuer, tokenRepo, roleRepo)
+	internalUserService := service.NewInternalUserService(userRepo)
+	internalUserHandler := handler.NewInternalUserHandler(internalUserService)
+
+	router := handler.NewRouter(authHandler, roleHandler, internalUserHandler, jwtIssuer, tokenRepo, roleRepo)
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.App.Port),

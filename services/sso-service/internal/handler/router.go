@@ -19,6 +19,7 @@ const AdminRole = "admin"
 func NewRouter(
 	authHandler *AuthHandler,
 	roleHandler *RoleHandler,
+	internalUserHandler *InternalUserHandler,
 	issuer *jwtutil.Issuer,
 	blacklist middleware.BlacklistChecker,
 	roleLister middleware.UserRoleLister,
@@ -35,6 +36,11 @@ func NewRouter(
 	// 网关 ForwardAuth 校验端点（见 deploy/k8s/gateway/auth-middleware.yaml）：
 	// 同 /health 一样不带前缀，网关 Middleware 直连本服务 Service 访问，不经网关暴露
 	r.GET("/internal/auth/verify", requireAuth, VerifyAuth(roleLister))
+
+	// 供集群内其他服务直连调用（如 admin-service 审核开户流程），不经网关暴露，
+	// 不做角色校验：仅信任集群内可信调用方，与 /internal/auth/verify 同一设计。
+	r.GET("/internal/users/:userID", internalUserHandler.GetUser)
+	r.PUT("/internal/users/:userID/review", internalUserHandler.ApproveReview)
 
 	base := r.Group(RoutePrefix)
 	{

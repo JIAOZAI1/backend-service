@@ -28,14 +28,23 @@ type TokenPair struct {
 }
 
 type UserResponse struct {
-	ID       uint64   `json:"id"`
-	Username string   `json:"username"`
-	Email    string   `json:"email"`
-	Roles    []string `json:"roles"`
+	ID           uint64   `json:"id"`
+	Username     string   `json:"username"`
+	Email        string   `json:"email"`
+	Status       int8     `json:"status"`
+	ReviewStatus string   `json:"reviewStatus"`
+	Roles        []string `json:"roles"`
 }
 
 func NewUserResponse(u *User, roles []string) UserResponse {
-	return UserResponse{ID: u.ID, Username: u.Username, Email: u.Email, Roles: roles}
+	return UserResponse{
+		ID:           u.ID,
+		Username:     u.Username,
+		Email:        u.Email,
+		Status:       u.Status,
+		ReviewStatus: u.ReviewStatus,
+		Roles:        roles,
+	}
 }
 
 type RoleResponse struct {
