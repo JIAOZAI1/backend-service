@@ -73,6 +73,13 @@ spec:
                 secretKeyRef:
                   name: config-dev-secret
                   key: internal-api-token
+            # 数据库实例密码加密密钥（AES-256-GCM，见 packages/db-credential-crypto）：
+            # 注册/编辑数据库实例时加密密码后落库，与 backend-job-service 未来解密时共用同一份
+            - name: DbInstanceEncryptionKey
+              valueFrom:
+                secretKeyRef:
+                  name: config-dev-secret
+                  key: db-instance-encryption-key
           readinessProbe:
             httpGet:
               path: /health

@@ -10,7 +10,7 @@
 | --- | --- | --- | --- | --- | --- |
 | `lead-mind-backend.dev.com` | `/sso-service` | sso-service | `sso-service.default.svc.cluster.local:8080` | 否（服务内部自带 `RequireAuth`） | 统一登录服务（注册/登录/注销/续期/角色管理），详见 [sso-service README](../services/sso-service/README.md#api-说明) |
 | `lead-mind-backend.dev.com` | `/backend-job-service` | backend-job-service | `backend-job-service.default.svc.cluster.local:8080` | 是 | 作业调度与执行服务（Job/Task 管理、执行状态查询），详见 [backend-job-service README](../services/backend-job-service/README.md#api-说明) |
-| `lead-mind-backend.dev.com` | `/admin-service` | admin-service | `admin-service.default.svc.cluster.local:8080` | 是 | 管理员服务（系统级设置管理），所有接口要求 `admin` 角色，详见 [admin-service README](../services/admin-service/README.md#api-说明) |
+| `lead-mind-backend.dev.com` | `/admin-service` | admin-service | `admin-service.default.svc.cluster.local:8080` | 是 | 管理员服务（系统级设置、用户注册审核开户、数据库实例注册），所有接口要求 `admin` 角色，详见 [admin-service README](../services/admin-service/README.md#api-说明) |
 
 「网关登录校验」为 **是** 的服务由网关 ForwardAuth 统一校验 access token（JWT 验签 + 登出黑名单，见 [deploy/k8s/gateway/README.md](../deploy/k8s/gateway/README.md#登录校验forwardauth)），校验通过后网关向后端注入 `X-User-Id`/`X-Username`/`X-User-Roles` 请求头。
 

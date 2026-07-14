@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\AdminService.Application\AdminService.Application.csproj" />
     <ProjectReference Include="..\AdminService.Domain\AdminService.Domain.csproj" />
+    <ProjectReference Include="..\..\..\..\packages\db-credential-crypto\dotnet\DbCredentialCrypto\DbCredentialCrypto.csproj" />
   </ItemGroup>
 
   <ItemGroup>

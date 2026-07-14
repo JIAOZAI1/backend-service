@@ -13,6 +13,7 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped<ISystemSettingService, SystemSettingService>();
         services.AddScoped<IReviewService, ReviewService>();
         services.AddScoped<ITenantQueryService, TenantQueryService>();
+        services.AddScoped<IDatabaseInstanceService, DatabaseInstanceService>();
 
         services.AddSingleton(new TenantDatabaseOptions
         {

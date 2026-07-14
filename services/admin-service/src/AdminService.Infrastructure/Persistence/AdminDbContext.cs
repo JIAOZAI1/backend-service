@@ -8,6 +8,7 @@ public class AdminDbContext(DbContextOptions<AdminDbContext> options) : DbContex
     public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<UserTenant> UserTenants => Set<UserTenant>();
+    public DbSet<DatabaseInstance> DatabaseInstances => Set<DatabaseInstance>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

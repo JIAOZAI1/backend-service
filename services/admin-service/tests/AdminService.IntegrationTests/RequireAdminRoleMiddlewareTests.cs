@@ -1,36 +1,48 @@
 using System.Net;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.Configuration;
 using Shouldly;
 
 namespace AdminService.IntegrationTests;
 
 /// <summary>
 /// 中间件在 EF Core 之前拦截请求，401/403 场景不会触达数据库，
-/// 因此这里只提供一个占位连接串满足 AddInfrastructureServices 的启动校验，无需真实 MySQL。
+/// 因此这里只提供占位配置满足 AddApplicationServices/AddInfrastructureServices 的启动校验，无需真实依赖。
+/// Program.cs 用的是 minimal hosting（WebApplication.CreateBuilder），
+/// WebApplicationFactory 的 ConfigureAppConfiguration 钩子对这种启动方式不生效
+/// （它是为通用 Host/IHostBuilder 设计的），所以改用环境变量注入——
+/// CreateBuilder 内部的默认配置源本就包含环境变量，这条路径可靠。
 /// </summary>
-public class RequireAdminRoleMiddlewareTests : IClassFixture<WebApplicationFactory<Api.Program>>
+public class RequireAdminRoleMiddlewareTests : IClassFixture<WebApplicationFactory<Api.Program>>, IDisposable
 {
+    private static readonly Dictionary<string, string> _envOverrides = new()
+    {
+        ["ConnectionStrings__MySql"] = "Server=localhost;Port=3306;Database=admin_db_test;User=root;Password=root;",
+        ["Services__SsoService__BaseUrl"] = "http://sso-service.default.svc.cluster.local",
+        ["Services__JobService__BaseUrl"] = "http://backend-job-service.default.svc.cluster.local",
+        ["TenantDatabase__Host"] = "localhost",
+        ["TenantDatabase__Port"] = "3306",
+        ["Internal__Token"] = "test-internal-token",
+        ["DbInstanceEncryptionKey"] = "r9lrkFdjjSI03KYHue3SNf5M7EjtUStXSOvxZrLdDHI=",
+    };
+
     private readonly WebApplicationFactory<Api.Program> _factory;
 
     public RequireAdminRoleMiddlewareTests(WebApplicationFactory<Api.Program> factory)
     {
-        _factory = factory.WithWebHostBuilder(builder =>
+        foreach (var (key, value) in _envOverrides)
         {
-            builder.ConfigureAppConfiguration((_, config) =>
-            {
-                config.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["ConnectionStrings:MySql"] = "Server=localhost;Port=3306;Database=admin_db_test;User=root;Password=root;",
-                    ["Services:SsoService:BaseUrl"] = "http://sso-service.default.svc.cluster.local",
-                    ["Services:JobService:BaseUrl"] = "http://backend-job-service.default.svc.cluster.local",
-                    ["TenantDatabase:Host"] = "localhost",
-                    ["TenantDatabase:Port"] = "3306",
-                    ["Internal:Token"] = "test-internal-token",
-                });
-            });
-        });
+            Environment.SetEnvironmentVariable(key, value);
+        }
+
+        _factory = factory;
+    }
+
+    public void Dispose()
+    {
+        foreach (var key in _envOverrides.Keys)
+        {
+            Environment.SetEnvironmentVariable(key, null);
+        }
     }
 
     [Fact]

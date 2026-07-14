@@ -7,9 +7,11 @@ on:
       - develop
     paths:
       - "services/admin-service/**"
+      - "packages/db-credential-crypto/dotnet/**"
   pull_request:
     paths:
       - "services/admin-service/**"
+      - "packages/db-credential-crypto/dotnet/**"
 
 env:
   REGISTRY: ghcr.io
@@ -78,7 +80,8 @@ jobs:
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
-          context: services/admin-service
+          context: .
+          file: services/admin-service/Dockerfile
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

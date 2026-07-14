@@ -2,6 +2,7 @@ using AdminService.Application.Interfaces;
 using AdminService.Infrastructure.ExternalClients;
 using AdminService.Infrastructure.Persistence;
 using AdminService.Infrastructure.Repositories;
+using AdminService.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -21,6 +22,11 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<ISystemSettingRepository, SystemSettingRepository>();
         services.AddScoped<ITenantRepository, TenantRepository>();
         services.AddScoped<IUserTenantRepository, UserTenantRepository>();
+        services.AddScoped<IDatabaseInstanceRepository, DatabaseInstanceRepository>();
+
+        var dbInstanceEncryptionKey = configuration["DbInstanceEncryptionKey"]
+            ?? throw new InvalidOperationException("DbInstanceEncryptionKey is not configured");
+        services.AddSingleton<IDbCredentialCipher>(new AesGcmDbCredentialCipher(dbInstanceEncryptionKey));
 
         var internalToken = configuration["Internal:Token"]
             ?? throw new InvalidOperationException("Internal:Token is not configured");
