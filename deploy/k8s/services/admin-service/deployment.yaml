@@ -54,6 +54,18 @@ spec:
                   key: mysql-password
             - name: ConnectionStrings__MySql
               value: "Server=$(MYSQL_HOST);Port=$(MYSQL_PORT);Database=$(MYSQL_DATABASE);User=$(MYSQL_USERNAME);Password=$(MYSQL_PASSWORD);"
+            # 审核开户流程集群内直连 sso-service / backend-job-service（Service DNS，不经网关）
+            - name: Services__SsoService__BaseUrl
+              value: "http://sso-service.default.svc.cluster.local"
+            - name: Services__JobService__BaseUrl
+              value: "http://backend-job-service.default.svc.cluster.local"
+            # 新租户数据库落在与 sys_db 相同的 MySQL 实例（沿用 config-dev-secret 的 mysql-host/mysql-port）
+            - name: TenantDatabase__Type
+              value: "mysql"
+            - name: TenantDatabase__Host
+              value: "$(MYSQL_HOST)"
+            - name: TenantDatabase__Port
+              value: "$(MYSQL_PORT)"
           readinessProbe:
             httpGet:
               path: /health
