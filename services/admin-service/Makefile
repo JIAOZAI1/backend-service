@@ -1,6 +1,6 @@
 .PHONY: run test build publish docker-build migrate-up migrate-down
 
-DB_URL ?= mysql://admin_service_user:$(MYSQL_PASSWORD)@tcp(127.0.0.1:3306)/admin_db
+DB_URL ?= mysql://sys_user:$(MYSQL_PASSWORD)@tcp(127.0.0.1:3306)/sys_db
 
 run:
 	dotnet run --project src/AdminService.Api

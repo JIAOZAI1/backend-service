@@ -37,6 +37,11 @@ spec:
                 secretKeyRef:
                   name: config-dev-secret
                   key: mysql-port
+            - name: MYSQL_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: config-dev-secret
+                  key: mysql-database
             - name: MYSQL_USERNAME
               valueFrom:
                 secretKeyRef:
@@ -48,7 +53,7 @@ spec:
                   name: config-dev-secret
                   key: mysql-password
             - name: ConnectionStrings__MySql
-              value: "Server=$(MYSQL_HOST);Port=$(MYSQL_PORT);Database=admin_db;User=$(MYSQL_USERNAME);Password=$(MYSQL_PASSWORD);"
+              value: "Server=$(MYSQL_HOST);Port=$(MYSQL_PORT);Database=$(MYSQL_DATABASE);User=$(MYSQL_USERNAME);Password=$(MYSQL_PASSWORD);"
           readinessProbe:
             httpGet:
               path: /health

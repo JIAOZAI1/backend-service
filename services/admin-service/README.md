@@ -47,14 +47,14 @@ admin-service/
 ## 本地启动方式
 
 ```bash
-export ConnectionStrings__MySql="Server=192.168.8.184;Port=3306;Database=admin_db;User=admin_service_user;Password=xxx;"
+export ConnectionStrings__MySql="Server=192.168.8.184;Port=3306;Database=sys_db;User=sys_user;Password=xxx;"
 
 make run
 ```
 
 .NET 的配置系统支持用双下划线 `__` 表示嵌套 key（对应 `appsettings.json` 里的 `ConnectionStrings:MySql`），环境变量优先级高于 `appsettings.{env}.json`，敏感值不写入仓库配置文件，符合规范第 15 章。
 
-依赖 MySQL 8.x（`admin_db`），需自行准备并保证 `appsettings.dev.json` 中的连接地址可达。
+依赖 MySQL 8.x。仓库内所有服务共用同一个数据库 `sys_db`（见 f06a0ba「unify infra config via shared config secret and migrate to sys_db」），各服务的表通过表名区分（本服务为 `system_settings`），配置从共享的 `config-dev-secret` 注入（`mysql-host/port/database/username/password`），需自行准备并保证连接地址可达。
 
 本地直连调试（不经网关）时请求不带身份头，会被 `RequireAdminRoleMiddleware` 拒绝；如需本地联调，通过网关转发请求，或手动在请求中附加 `X-User-Id`/`X-Username`/`X-User-Roles`（仅限本地调试，生产环境这些头只信任网关注入的版本）。
 
