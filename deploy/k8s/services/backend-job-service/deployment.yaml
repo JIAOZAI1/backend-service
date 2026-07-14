@@ -93,6 +93,12 @@ spec:
                 secretKeyRef:
                   name: config-dev-secret
                   key: rabbitmq-password
+            # 内部服务间调用共享密钥（校验 admin-service 直连 POST /jobs、/jobs/{jobId}/tasks 的请求）
+            - name: Internal__Token
+              valueFrom:
+                secretKeyRef:
+                  name: config-dev-secret
+                  key: internal-api-token
           readinessProbe:
             httpGet:
               path: /health

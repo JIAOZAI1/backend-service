@@ -72,6 +72,12 @@ spec:
                 secretKeyRef:
                   name: sso-service-secrets
                   key: jwt-secret
+            # 内部服务间调用共享密钥（校验 admin-service 直连 /internal/users/... 的请求）
+            - name: INTERNAL_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: config-dev-secret
+                  key: internal-api-token
           readinessProbe:
             httpGet:
               path: /health

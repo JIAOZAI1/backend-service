@@ -66,6 +66,13 @@ spec:
               value: "$(MYSQL_HOST)"
             - name: TenantDatabase__Port
               value: "$(MYSQL_PORT)"
+            # 内部服务间调用共享密钥：调用 sso-service/backend-job-service 内部接口时
+            # 自动附加为 X-Internal-Token 请求头（见 InternalTokenDelegatingHandler）
+            - name: Internal__Token
+              valueFrom:
+                secretKeyRef:
+                  name: config-dev-secret
+                  key: internal-api-token
           readinessProbe:
             httpGet:
               path: /health
