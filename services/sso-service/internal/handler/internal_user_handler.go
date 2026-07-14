@@ -24,14 +24,14 @@ type approveReviewRequest struct {
 	ReviewedBy uint64 `json:"reviewedBy" binding:"required"`
 }
 
-func (h *InternalUserHandler) GetUser(c *gin.Context) {
+func (h *InternalUserHandler) GetUserInternal(c *gin.Context) {
 	userID, err := strconv.ParseUint(c.Param("userID"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
 		return
 	}
 
-	user, err := h.internalUserService.GetUser(c.Request.Context(), userID)
+	user, err := h.internalUserService.GetUserInternal(c.Request.Context(), userID)
 	if err != nil {
 		if errors.Is(err, service.ErrUserNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
@@ -44,7 +44,7 @@ func (h *InternalUserHandler) GetUser(c *gin.Context) {
 	c.JSON(http.StatusOK, user)
 }
 
-func (h *InternalUserHandler) ApproveReview(c *gin.Context) {
+func (h *InternalUserHandler) ApproveReviewInternal(c *gin.Context) {
 	userID, err := strconv.ParseUint(c.Param("userID"), 10, 64)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
@@ -57,7 +57,7 @@ func (h *InternalUserHandler) ApproveReview(c *gin.Context) {
 		return
 	}
 
-	if err := h.internalUserService.ApproveReview(c.Request.Context(), userID, req.ReviewedBy); err != nil {
+	if err := h.internalUserService.ApproveReviewInternal(c.Request.Context(), userID, req.ReviewedBy); err != nil {
 		if errors.Is(err, service.ErrUserNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
 			return

@@ -18,7 +18,7 @@
 | 8-9 | 文件命名规范、`service.yaml` 服务元信息 |
 | 10-13 | 公共包规范（`packages/`）、脚本规范（`scripts/`）、部署目录规范（`deploy/`） |
 | 14-15 | 环境命名（仅 `dev/test/staging/prod`）、配置管理与敏感信息禁止事项 |
-| 16-17 | API 规范（`/api/v1/...` + `/health`）、网关路由前缀规范（`/<domain>-service/...`，第 16.3 节）、分页与排序参数规范（第 16.4 节）、数据库命名规范 |
+| 16-17 | API 规范（`/api/v1/...` + `/health`）、网关路由前缀规范（`/<domain>-service/...`，第 16.3 节）、分页与排序参数规范（第 16.4 节）、仅内部调用接口命名规范与集群内调用方式（Service DNS 直连，第 16.5 节）、数据库命名规范 |
 | 18-19 | Git 分支规范、Conventional Commits 提交规范 |
 | 20-22 | Makefile 规范、文档规范、新服务接入最小标准 |
 | 23-26 | 推荐最终目录树、团队强制约定清单、落地建议、结语 |
@@ -33,6 +33,8 @@
 4. **配置与密钥**：环境名只用 `dev/test/staging/prod`；禁止把生产密钥、密码、Token 提交到仓库或硬编码（第 14、15 章）。
 5. **API**：REST 路径为 `/api/{version}/{resource}`，必须提供 `/health`；服务内部路由必须自带网关路由前缀 `/<domain>-service`（网关不 strip 前缀），`/health` 除外（第 16 章）。
 5.1 **分页接口**：所有分页列表接口必须支持 `page`/`pageSize`/`sortBy`/`sortOrder` 四个 query 参数，`sortBy` 必须校验白名单（非法字段返回 400），禁止直接拼接为 ORM/SQL 排序表达式；响应体固定为 `items`/`page`/`pageSize`/`total` 结构（第 16.4 章）。新增分页接口时必须一并实现排序支持，不允许先上线固定排序。
+5.2 **仅内部调用接口**：专为服务间调用设计、不对外暴露的接口，路由必须以 `/internal/` 开头（不带网关前缀），Handler/Service 方法名必须带 `Internal` 标识（如 `GetUserInternalAsync`），且必须做调用方身份校验（第 16.5 章）；服务自身的公开业务 API 即使当前只被内部服务调用，也不适用此规则，维持对外 API 命名。
+5.3 **服务间调用**：统一走 K8s Service DNS 直连（`http://<service-name>.<namespace>.svc.cluster.local:<port>`），不经网关；被集群内直连调用的接口必须自行实现调用方鉴权，不能假设"不经网关=已被拦截"（第 16.5.5 章）。
 6. **数据库**：库名 `<domain>_db`，表名小写复数+下划线，字段含 `id/created_at/updated_at/deleted_at`（第 17 章）。
 7. **Git**：分支遵循 `feature/`、`fix/`、`hotfix/`、`release/` 前缀；提交信息遵循 Conventional Commits（`feat/fix/docs/refactor/test/chore/ci`）（第 18-19 章）。
 8. **公共代码**只能放在 `packages/`，禁止服务间直接互相引用内部代码（第 2.2、10 章）。

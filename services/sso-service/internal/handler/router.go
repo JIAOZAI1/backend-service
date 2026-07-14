@@ -36,15 +36,15 @@ func NewRouter(
 
 	// 网关 ForwardAuth 校验端点（见 deploy/k8s/gateway/auth-middleware.yaml）：
 	// 同 /health 一样不带前缀，网关 Middleware 直连本服务 Service 访问，不经网关暴露
-	r.GET("/internal/auth/verify", requireAuth, VerifyAuth(roleLister))
+	r.GET("/internal/auth/verify", requireAuth, VerifyAuthInternal(roleLister))
 
 	// 供集群内其他服务直连调用（如 admin-service 审核开户流程），不经网关暴露。
 	// 不做用户角色校验，但要求调用方携带集群内共享密钥（RequireInternalToken），
 	// 弥补"仅靠网络可达性作为信任边界"的不足：详见 middleware.RequireInternalToken。
 	requireInternalToken := middleware.RequireInternalToken(internalToken)
 	internalUsers := r.Group("/internal/users", requireInternalToken)
-	internalUsers.GET("/:userID", internalUserHandler.GetUser)
-	internalUsers.PUT("/:userID/review", internalUserHandler.ApproveReview)
+	internalUsers.GET("/:userID", internalUserHandler.GetUserInternal)
+	internalUsers.PUT("/:userID/review", internalUserHandler.ApproveReviewInternal)
 
 	base := r.Group(RoutePrefix)
 	{

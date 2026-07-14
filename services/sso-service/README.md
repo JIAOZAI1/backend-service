@@ -88,6 +88,8 @@ Base path: `/sso-service/api/v1`
 
 以上两个内部用户接口均不做用户角色校验，仅信任集群内可信调用方（与 `/internal/auth/verify` 同一设计），不经网关暴露。此外，二者要求请求携带 `X-Internal-Token` 请求头并与配置的 `INTERNAL_API_TOKEN` 一致（见 [`middleware.RequireInternalToken`](internal/middleware/internal_token.go)），否则返回 401——`/internal/auth/verify` 不需要此密钥，它的信任边界完全依赖"仅集群内网关中间件可达"。
 
+按规范第 16.5 章，本表三个接口对应的 Handler/Service 方法名均带 `Internal` 后缀（`VerifyAuthInternal`、`GetUserInternal`、`ApproveReviewInternal`），与对外业务接口的方法命名区分。
+
 角色数据每次请求都从数据库实时查询，不依赖 JWT 中的快照，权限变更（分配/移除角色）对已签发的 access token 立即生效，无需重新登录。
 
 首个 `admin` 用户需手动在数据库中写入 `user_roles`（没有任何用户天生拥有 `admin` 角色，这是有意的引导步骤，避免自举出无法收回的初始权限）：
