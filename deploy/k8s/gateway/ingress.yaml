@@ -50,3 +50,10 @@ spec:
                 name: backend-job-service
                 port:
                   name: http
+          - path: /admin-service
+            pathType: Prefix
+            backend:
+              service:
+                name: admin-service
+                port:
+                  name: http

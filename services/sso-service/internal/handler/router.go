@@ -34,7 +34,7 @@ func NewRouter(
 
 	// 网关 ForwardAuth 校验端点（见 deploy/k8s/gateway/auth-middleware.yaml）：
 	// 同 /health 一样不带前缀，网关 Middleware 直连本服务 Service 访问，不经网关暴露
-	r.GET("/internal/auth/verify", requireAuth, VerifyAuth)
+	r.GET("/internal/auth/verify", requireAuth, VerifyAuth(roleLister))
 
 	base := r.Group(RoutePrefix)
 	{

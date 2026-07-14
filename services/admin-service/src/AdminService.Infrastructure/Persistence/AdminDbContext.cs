@@ -1,0 +1,14 @@
+using AdminService.Domain.Entities;
+using Microsoft.EntityFrameworkCore;
+
+namespace AdminService.Infrastructure.Persistence;
+
+public class AdminDbContext(DbContextOptions<AdminDbContext> options) : DbContext(options)
+{
+    public DbSet<SystemSetting> SystemSettings => Set<SystemSetting>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.ApplyConfigurationsFromAssembly(typeof(AdminDbContext).Assembly);
+    }
+}

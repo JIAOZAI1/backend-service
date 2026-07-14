@@ -14,6 +14,9 @@ spec:
     address: http://sso-service.default.svc.cluster.local:8080/internal/auth/verify
     authResponseHeaders:
       # 网关会先删除原请求中客户端自带的同名头，再用校验端点的响应头覆盖写入，
-      # 因此后端服务收到的 X-User-Id / X-Username 不可能被客户端伪造。
+      # 因此后端服务收到的 X-User-Id / X-Username / X-User-Roles 不可能被客户端伪造。
+      # X-User-Roles 为逗号分隔的角色名列表，sso-service 每次请求实时查库生成，
+      # 不依赖 JWT 快照，保证角色变更（如撤销 admin）对后续请求立即生效。
       - X-User-Id
       - X-Username
+      - X-User-Roles

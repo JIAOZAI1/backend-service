@@ -80,7 +80,7 @@ Base path: `/sso-service/api/v1`
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/internal/auth/verify` | 供网关 ForwardAuth 调用（见 [deploy/k8s/gateway/auth-middleware.yaml](../../deploy/k8s/gateway/auth-middleware.yaml)）：校验 `Authorization: Bearer <access token>` 并查 Redis 黑名单，通过返回 204 及 `X-User-Id`/`X-Username` 响应头，失败返回 401。与 `/health` 一样不带网关前缀，仅集群内直连本服务可达 |
+| GET | `/internal/auth/verify` | 供网关 ForwardAuth 调用（见 [deploy/k8s/gateway/auth-middleware.yaml](../../deploy/k8s/gateway/auth-middleware.yaml)）：校验 `Authorization: Bearer <access token>` 并查 Redis 黑名单，通过返回 204 及 `X-User-Id`/`X-Username`/`X-User-Roles`（逗号分隔的角色名，实时查库、不依赖 JWT 快照）响应头，失败返回 401。与 `/health` 一样不带网关前缀，仅集群内直连本服务可达 |
 
 角色数据每次请求都从数据库实时查询，不依赖 JWT 中的快照，权限变更（分配/移除角色）对已签发的 access token 立即生效，无需重新登录。
 

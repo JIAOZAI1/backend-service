@@ -1,0 +1,8 @@
+name: admin-service
+displayName: 管理员服务
+language: dotnet
+owner: platform-team
+port: 8080
+healthCheck: /health
+dependencies:
+  - mysql
