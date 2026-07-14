@@ -1,3 +1,4 @@
+using BackendJobService.Api.Auth;
 using BackendJobService.Application;
 using BackendJobService.Infrastructure;
 
@@ -15,6 +16,12 @@ public class Program
         builder.Services.AddApplicationServices();
         builder.Services.AddInfrastructureServices(builder.Configuration);
 
+        var internalToken = builder.Configuration["Internal:Token"];
+        if (string.IsNullOrEmpty(internalToken))
+        {
+            throw new InvalidOperationException("Internal:Token (INTERNAL_API_TOKEN) is not configured");
+        }
+
         var app = builder.Build();
 
         // 仓库环境命名统一用 dev/test/staging/prod（见规范第 14 章），不使用
@@ -27,6 +34,9 @@ public class Program
 
         // 健康检查不带网关路由前缀：K8s 探针直接访问 Pod，不经过网关
         app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+
+        // 仅拦截创建作业/创建任务这两个写接口，其余只读接口维持现状，见 RequireInternalTokenMiddleware
+        app.UseMiddleware<RequireInternalTokenMiddleware>(internalToken);
 
         app.MapControllers();
 

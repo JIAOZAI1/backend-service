@@ -53,6 +53,7 @@ export RabbitMq__Host=192.168.8.184
 export RabbitMq__Port=30672
 export RabbitMq__Username=admin
 export RabbitMq__Password=xxx
+export Internal__Token=xxx
 
 make run
 ```
@@ -66,6 +67,7 @@ make run
 * `appsettings.json`：全局默认值（空的连接串/密码占位）
 * `appsettings.{env}.json`：环境名遵循 `dev / test / staging / prod`
 * `Plugins:Directory`：插件 DLL 所在目录，相对于程序工作目录
+* `Internal:Token`：集群内服务间调用共享密钥，未配置时启动直接抛异常（见下文"内部调用鉴权"）
 
 ## 数据库迁移
 
@@ -95,6 +97,17 @@ Base path: `/backend-job-service/api/v1`
 | GET  | `/backend-job-service/api/v1/jobs/{jobId}/executions` | 查询作业的执行历史（`?limit=` 默认 20，最大 200） |
 | GET  | `/backend-job-service/api/v1/jobs/{jobId}/status` | 查询作业状态聚合视图（作业状态 + 最近一次执行及其 Task 状态），供前端轮询 |
 | GET  | `/backend-job-service/api/v1/executions/{executionId}` | 查询单次执行详情（含每个 Task 的执行状态） |
+
+标 🔒 的两个写接口（`POST /jobs`、`POST /jobs/{jobId}/tasks`）会触发建库/建用户等运维操作，要求请求携带 `X-Internal-Token` 请求头并与配置的 `Internal:Token` 一致，见下文"内部调用鉴权"；其余只读接口不受影响。
+
+## 内部调用鉴权
+
+`POST /jobs` 与 `POST /jobs/{jobId}/tasks` 目前唯一的调用方是 admin-service 的审核开户流程（触发 `mysql-create-database`/`mysql-create-user` 建库建用户）。这两个接口不经网关暴露，但仅靠"网络可达性"作为信任边界不足以防止集群内其他 Pod 越权调用，因此额外要求共享密钥：
+
+* [`RequireInternalTokenMiddleware`](src/BackendJobService.Api/Auth/RequireInternalTokenMiddleware.cs) 只拦截上述两个写接口（按 method + path 精确匹配），其余只读接口维持现状不做改动
+* 密钥通过 `Internal:Token`（环境变量 `Internal__Token`）配置，与 sso-service、admin-service 共用同一份（`config-dev-secret` 的 `internal-api-token`）
+* 校验用固定时间比较（`CryptographicOperations.FixedTimeEquals`）防止时序侧信道泄露密钥
+* 未配置 `Internal:Token` 时服务启动直接抛异常，不会以"不校验"的状态误上线
 
 ## 可靠性机制（当前版本范围）
 
