@@ -30,6 +30,7 @@ sso-service/
 export MYSQL_PASSWORD=xxx
 export REDIS_PASSWORD=xxx
 export JWT_SECRET=xxx
+export INTERNAL_API_TOKEN=xxx
 export SSO_APP_ENV=dev   # 对应 configs/app.dev.yaml
 
 make run
@@ -49,6 +50,7 @@ make run
 | `MYSQL_PASSWORD` | MySQL 密码，注入到 DSN 中 |
 | `REDIS_PASSWORD` | Redis 密码 |
 | `JWT_SECRET` | JWT 签名密钥，生产环境必须通过 Secret 管理注入，禁止硬编码 |
+| `INTERNAL_API_TOKEN` | 集群内服务间调用共享密钥，`/internal/users/...` 接口用它校验调用方（见下文），与 admin-service/backend-job-service 共用同一份（`config-dev-secret` 的 `internal-api-token`），生产环境必须通过 Secret 管理注入，禁止硬编码。启动时未配置直接 `log.Fatal` |
 
 ## API 说明
 
@@ -84,7 +86,7 @@ Base path: `/sso-service/api/v1`
 | GET | `/internal/users/{userID}` | 供 admin-service 审核开户流程集群内直连调用：返回用户基本信息（`id`/`username`/`email`/`status`/`reviewStatus`），不存在返回 404 |
 | PUT | `/internal/users/{userID}/review` | 供 admin-service 审核通过后调用（body: `{"reviewedBy": <管理员用户ID>}`）：把该用户 `review_status` 置为 `approved` 并记录 `reviewed_by`，幂等（重复调用不报错），不存在返回 404 |
 
-以上两个内部用户接口均不做角色校验，仅信任集群内可信调用方（与 `/internal/auth/verify` 同一设计），不经网关暴露。
+以上两个内部用户接口均不做用户角色校验，仅信任集群内可信调用方（与 `/internal/auth/verify` 同一设计），不经网关暴露。此外，二者要求请求携带 `X-Internal-Token` 请求头并与配置的 `INTERNAL_API_TOKEN` 一致（见 [`middleware.RequireInternalToken`](internal/middleware/internal_token.go)），否则返回 401——`/internal/auth/verify` 不需要此密钥，它的信任边界完全依赖"仅集群内网关中间件可达"。
 
 角色数据每次请求都从数据库实时查询，不依赖 JWT 中的快照，权限变更（分配/移除角色）对已签发的 access token 立即生效，无需重新登录。
 

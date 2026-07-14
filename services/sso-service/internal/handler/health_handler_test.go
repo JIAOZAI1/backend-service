@@ -28,7 +28,7 @@ func (f fakeRoleLister) ListByUserID(_ context.Context, userID uint64) ([]model.
 }
 
 func TestHealthRoute(t *testing.T) {
-	router := handler.NewRouter(nil, nil, nil, jwtutil.NewIssuer("secret", "issuer"), noopBlacklist{}, fakeRoleLister{})
+	router := handler.NewRouter(nil, nil, nil, jwtutil.NewIssuer("secret", "issuer"), noopBlacklist{}, fakeRoleLister{}, "test-internal-token")
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()

@@ -31,6 +31,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("load config: %v", err)
 	}
+	if cfg.Internal.Token == "" {
+		log.Fatal("internal.token (INTERNAL_API_TOKEN) is not configured")
+	}
 
 	db, err := gorm.Open(mysql.Open(cfg.MySQL.DSN), &gorm.Config{})
 	if err != nil {
@@ -61,7 +64,7 @@ func main() {
 	internalUserService := service.NewInternalUserService(userRepo)
 	internalUserHandler := handler.NewInternalUserHandler(internalUserService)
 
-	router := handler.NewRouter(authHandler, roleHandler, internalUserHandler, jwtIssuer, tokenRepo, roleRepo)
+	router := handler.NewRouter(authHandler, roleHandler, internalUserHandler, jwtIssuer, tokenRepo, roleRepo, cfg.Internal.Token)
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.App.Port),

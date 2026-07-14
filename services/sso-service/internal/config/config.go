@@ -9,10 +9,11 @@ import (
 )
 
 type Config struct {
-	App   AppConfig   `mapstructure:"app"`
-	MySQL MySQLConfig `mapstructure:"mysql"`
-	Redis RedisConfig `mapstructure:"redis"`
-	JWT   JWTConfig   `mapstructure:"jwt"`
+	App      AppConfig      `mapstructure:"app"`
+	MySQL    MySQLConfig    `mapstructure:"mysql"`
+	Redis    RedisConfig    `mapstructure:"redis"`
+	JWT      JWTConfig      `mapstructure:"jwt"`
+	Internal InternalConfig `mapstructure:"internal"`
 }
 
 type AppConfig struct {
@@ -35,6 +36,11 @@ type JWTConfig struct {
 	Issuer          string        `mapstructure:"issuer"`
 	AccessTokenTTL  time.Duration `mapstructure:"accessTokenTTL"`
 	RefreshTokenTTL time.Duration `mapstructure:"refreshTokenTTL"`
+}
+
+// InternalConfig 是集群内服务间调用的共享密钥配置，见 middleware.RequireInternalToken。
+type InternalConfig struct {
+	Token string `mapstructure:"token"`
 }
 
 // Load 从 configs/app.<env>.yaml 加载配置，环境变量可覆盖同名键（SSO_ 前缀）。
@@ -63,6 +69,7 @@ func Load(env string) (*Config, error) {
 	cfg.Redis.Addr = os.ExpandEnv(cfg.Redis.Addr)
 	cfg.Redis.Password = os.ExpandEnv(cfg.Redis.Password)
 	cfg.JWT.Secret = os.ExpandEnv(cfg.JWT.Secret)
+	cfg.Internal.Token = os.ExpandEnv(cfg.Internal.Token)
 
 	return &cfg, nil
 }

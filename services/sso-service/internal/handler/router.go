@@ -23,6 +23,7 @@ func NewRouter(
 	issuer *jwtutil.Issuer,
 	blacklist middleware.BlacklistChecker,
 	roleLister middleware.UserRoleLister,
+	internalToken string,
 ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -37,10 +38,13 @@ func NewRouter(
 	// 同 /health 一样不带前缀，网关 Middleware 直连本服务 Service 访问，不经网关暴露
 	r.GET("/internal/auth/verify", requireAuth, VerifyAuth(roleLister))
 
-	// 供集群内其他服务直连调用（如 admin-service 审核开户流程），不经网关暴露，
-	// 不做角色校验：仅信任集群内可信调用方，与 /internal/auth/verify 同一设计。
-	r.GET("/internal/users/:userID", internalUserHandler.GetUser)
-	r.PUT("/internal/users/:userID/review", internalUserHandler.ApproveReview)
+	// 供集群内其他服务直连调用（如 admin-service 审核开户流程），不经网关暴露。
+	// 不做用户角色校验，但要求调用方携带集群内共享密钥（RequireInternalToken），
+	// 弥补"仅靠网络可达性作为信任边界"的不足：详见 middleware.RequireInternalToken。
+	requireInternalToken := middleware.RequireInternalToken(internalToken)
+	internalUsers := r.Group("/internal/users", requireInternalToken)
+	internalUsers.GET("/:userID", internalUserHandler.GetUser)
+	internalUsers.PUT("/:userID/review", internalUserHandler.ApproveReview)
 
 	base := r.Group(RoutePrefix)
 	{
