@@ -1,4 +1,5 @@
 using AdminService.Application.Interfaces;
+using AdminService.Infrastructure.ExternalClients;
 using AdminService.Infrastructure.Persistence;
 using AdminService.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -18,7 +19,26 @@ public static class InfrastructureServiceCollectionExtensions
             options.UseMySql(mysqlConnectionString, ServerVersion.AutoDetect(mysqlConnectionString)));
 
         services.AddScoped<ISystemSettingRepository, SystemSettingRepository>();
+        services.AddScoped<ITenantRepository, TenantRepository>();
+        services.AddScoped<IUserTenantRepository, UserTenantRepository>();
+
+        AddExternalServiceClient<ISsoServiceClient, SsoServiceClient>(services, configuration, "Services:SsoService:BaseUrl");
+        AddExternalServiceClient<IJobServiceClient, JobServiceClient>(services, configuration, "Services:JobService:BaseUrl");
 
         return services;
+    }
+
+    private static void AddExternalServiceClient<TInterface, TImplementation>(
+        IServiceCollection services, IConfiguration configuration, string baseUrlConfigKey)
+        where TInterface : class
+        where TImplementation : class, TInterface
+    {
+        var baseUrl = configuration[baseUrlConfigKey]
+            ?? throw new InvalidOperationException($"{baseUrlConfigKey} is not configured");
+
+        services.AddHttpClient<TInterface, TImplementation>(client =>
+        {
+            client.BaseAddress = new Uri(baseUrl);
+        });
     }
 }

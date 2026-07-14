@@ -23,6 +23,10 @@ public class RequireAdminRoleMiddlewareTests : IClassFixture<WebApplicationFacto
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["ConnectionStrings:MySql"] = "Server=localhost;Port=3306;Database=admin_db_test;User=root;Password=root;",
+                    ["Services:SsoService:BaseUrl"] = "http://sso-service.default.svc.cluster.local",
+                    ["Services:JobService:BaseUrl"] = "http://backend-job-service.default.svc.cluster.local",
+                    ["TenantDatabase:Host"] = "localhost",
+                    ["TenantDatabase:Port"] = "3306",
                 });
             });
         });

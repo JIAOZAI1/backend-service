@@ -1,22 +1,25 @@
 # admin-service
 
-管理员服务：面向系统级设置的管理接口，供拥有 `admin` 角色的用户使用。服务内置 `RequireAdminRoleMiddleware`，拦截除 `/health` 外的所有接口，要求当前用户拥有 `admin` 角色，未登录或角色不含 `admin` 均拒绝访问。
+管理员服务：面向系统级设置与新用户注册审核开户的管理接口，供拥有 `admin` 角色的用户使用。服务内置 `RequireAdminRoleMiddleware`，拦截除 `/health` 外的所有接口，要求当前用户拥有 `admin` 角色，未登录或角色不含 `admin` 均拒绝访问。
 
 ## 目录结构
 
 ```bash
 admin-service/
 ├── src/
-│   ├── AdminService.Api/                 # 入口层：Controllers、中间件（RequireAdminRoleMiddleware）、
+│   ├── AdminService.Api/                 # 入口层：Controllers（含 ReviewController、TenantsController）、
+│   │                                        #   中间件（RequireAdminRoleMiddleware）、
 │   │                                        #   网关身份读取（Auth/GatewayUser）、Program.cs、appsettings
-│   ├── AdminService.Application/         # 应用层：SystemSettingService（用例）、DTO、接口定义
-│   ├── AdminService.Domain/              # 领域层：SystemSetting 实体
-│   └── AdminService.Infrastructure/      # 基础设施层：EF Core、仓储实现
+│   ├── AdminService.Application/         # 应用层：SystemSettingService/ReviewService/TenantQueryService（用例）、
+│   │                                        #   DTO、接口定义、Common（SortSpec、密码/租户 code 生成器）
+│   ├── AdminService.Domain/              # 领域层：SystemSetting/Tenant/UserTenant 实体
+│   └── AdminService.Infrastructure/      # 基础设施层：EF Core、仓储实现、
+│                                            #   ExternalClients（集群内直连 sso-service/backend-job-service）
 ├── tests/
 │   ├── AdminService.UnitTests/
 │   └── AdminService.IntegrationTests/
 ├── configs/
-├── migrations/                            # 手写原生 SQL 迁移脚本，见下文
+├── migrations/                            # 手写原生 SQL 迁移脚本（系统设置表、租户表/用户租户关系表），见下文
 ├── AdminService.slnx
 ├── Dockerfile
 ├── Makefile
@@ -44,10 +47,28 @@ admin-service/
 
 角色管理（分配/撤销 `admin` 角色）由 sso-service 负责，见 [sso-service README](../sso-service/README.md#api-说明) 的角色管理接口。
 
+## 审核与开户
+
+新用户注册后处于 `pending` 待审核状态（字段维护在 sso-service 的 `users` 表），管理员通过 [`POST /admin-service/api/v1/reviews/{userId}/approve`](#api-说明) 审核通过并触发自动开户，编排逻辑见 [`ReviewService`](src/AdminService.Application/Services/ReviewService.cs)：
+
+1. 调用 sso-service `GET /internal/users/{userID}` 校验用户存在
+2. 若该用户尚无租户记录：生成全局唯一的 `tenant_id`（UUID）与 `tenant_code`（12 位小写 base32），写入 `tenants` 表（`status=created`）与 `user_tenants` 关系表；数据库名/用户名固定为 `tenant_{tenant_code}`，密码用 [`SecurePasswordGenerator`](src/AdminService.Application/Common/SecurePasswordGenerator.cs) 生成（16 位，大小写字母+数字+符号，排除易混淆字符）
+3. 调用 backend-job-service `POST /backend-job-service/api/v1/jobs` + `POST .../jobs/{jobId}/tasks` 创建一次性作业，依次挂载内置插件 `mysql-create-database`、`mysql-create-user`（见 [backend-job-service README](../backend-job-service/README.md#内置插件-backendjobserviceplugins)）在目标 MySQL 实例上建库建用户并授权
+4. 调用 sso-service `PUT /internal/users/{userID}/review` 把用户标记为 `approved`
+5. 本地把 `tenants.status` 更新为 `active`（服务期）
+
+**失败处理**：任一步失败均不自动回滚，直接返回 `500 {"failedStep": "...", "message": "..."}`。已落库/已触发的步骤保持原样，管理员可用同一个 `userId` 重新调用同一个审核接口重试——每一步（生成租户/建库建用户/标记已审核）均设计为幂等（`user_tenants` 唯一索引防重复插入，`CreateDatabaseHandler`/`CreateUserHandler` 本身幂等，审核状态更新是覆盖写）。
+
+审核编排调用的 sso-service、backend-job-service 内部接口均走**集群内 Service DNS 直连**（如 `http://sso-service.default.svc.cluster.local`），不经网关，与 sso-service 现有 `/internal/auth/verify` 的设计一致，见 [`AdminService.Infrastructure/ExternalClients`](src/AdminService.Infrastructure/ExternalClients)。
+
 ## 本地启动方式
 
 ```bash
 export ConnectionStrings__MySql="Server=192.168.8.184;Port=3306;Database=sys_db;User=sys_user;Password=xxx;"
+export Services__SsoService__BaseUrl="http://sso-service.default.svc.cluster.local"
+export Services__JobService__BaseUrl="http://backend-job-service.default.svc.cluster.local"
+export TenantDatabase__Host="192.168.8.184"
+export TenantDatabase__Port="3306"
 
 make run
 ```
@@ -62,6 +83,8 @@ make run
 
 * `appsettings.json`：全局默认值（空的连接串占位）
 * `appsettings.{env}.json`：环境名遵循 `dev / test / staging / prod`
+* `Services:SsoService:BaseUrl` / `Services:JobService:BaseUrl`：审核编排流程集群内直连的 Service DNS 地址（非敏感信息，直接写实际 Service 名，见 [deploy/k8s/services/admin-service/deployment.yaml](../../deploy/k8s/services/admin-service/deployment.yaml)）
+* `TenantDatabase:Host` / `TenantDatabase:Port` / `TenantDatabase:Type`：新租户数据库实际落在的目标 MySQL 实例地址，当前复用与 `sys_db` 相同的实例（`config-dev-secret` 的 `mysql-host`/`mysql-port`）
 
 ## 数据库迁移
 
@@ -86,3 +109,7 @@ Base path: `/admin-service/api/v1`
 | GET | `/admin-service/api/v1/settings` | 列出所有系统级设置 |
 | GET | `/admin-service/api/v1/settings/{key}` | 查询指定设置，不存在返回 404 |
 | PUT | `/admin-service/api/v1/settings/{key}` | 创建或更新指定设置（body: `{"value": "...", "description": "..."}`） |
+| POST | `/admin-service/api/v1/reviews/{userId}/approve` | 审核用户注册并自动开户，见 [审核与开户](#审核与开户)；用户不存在返回 404，编排失败返回 500 + `{"failedStep", "message"}` |
+| GET | `/admin-service/api/v1/tenants` | 分页查询租户列表，支持 `page`/`pageSize`/`sortBy`（`id`/`tenantCode`/`status`/`createdAt`，非法字段 400）/`sortOrder`，响应体固定为 `items`/`page`/`pageSize`/`total` |
+
+`TenantResponse` 不回显 `db_password`（数据库密码只落库，不通过任何查询接口返回）。
