@@ -22,6 +22,10 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<ITenantRepository, TenantRepository>();
         services.AddScoped<IUserTenantRepository, UserTenantRepository>();
 
+        var internalToken = configuration["Internal:Token"]
+            ?? throw new InvalidOperationException("Internal:Token is not configured");
+        services.AddTransient(_ => new InternalTokenDelegatingHandler(internalToken));
+
         AddExternalServiceClient<ISsoServiceClient, SsoServiceClient>(services, configuration, "Services:SsoService:BaseUrl");
         AddExternalServiceClient<IJobServiceClient, JobServiceClient>(services, configuration, "Services:JobService:BaseUrl");
 
@@ -39,6 +43,6 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddHttpClient<TInterface, TImplementation>(client =>
         {
             client.BaseAddress = new Uri(baseUrl);
-        });
+        }).AddHttpMessageHandler<InternalTokenDelegatingHandler>();
     }
 }

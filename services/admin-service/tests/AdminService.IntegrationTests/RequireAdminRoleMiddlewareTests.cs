@@ -27,6 +27,7 @@ public class RequireAdminRoleMiddlewareTests : IClassFixture<WebApplicationFacto
                     ["Services:JobService:BaseUrl"] = "http://backend-job-service.default.svc.cluster.local",
                     ["TenantDatabase:Host"] = "localhost",
                     ["TenantDatabase:Port"] = "3306",
+                    ["Internal:Token"] = "test-internal-token",
                 });
             });
         });

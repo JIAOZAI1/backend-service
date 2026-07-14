@@ -61,6 +61,8 @@ admin-service/
 
 审核编排调用的 sso-service、backend-job-service 内部接口均走**集群内 Service DNS 直连**（如 `http://sso-service.default.svc.cluster.local`），不经网关，与 sso-service 现有 `/internal/auth/verify` 的设计一致，见 [`AdminService.Infrastructure/ExternalClients`](src/AdminService.Infrastructure/ExternalClients)。
 
+仅靠"网络可达性"作为信任边界不足以防止集群内其他 Pod 越权调用这些接口，因此 [`InternalTokenDelegatingHandler`](src/AdminService.Infrastructure/ExternalClients/InternalTokenDelegatingHandler.cs) 会给两个客户端发出的每个请求自动附加 `X-Internal-Token` 请求头（值来自 `Internal:Token` 配置），sso-service/backend-job-service 侧对应校验这个密钥（见各自 README 的"内部调用鉴权"/"内部接口"章节）。三个服务共用同一份密钥（`config-dev-secret` 的 `internal-api-token`）。
+
 ## 本地启动方式
 
 ```bash
@@ -69,6 +71,7 @@ export Services__SsoService__BaseUrl="http://sso-service.default.svc.cluster.loc
 export Services__JobService__BaseUrl="http://backend-job-service.default.svc.cluster.local"
 export TenantDatabase__Host="192.168.8.184"
 export TenantDatabase__Port="3306"
+export Internal__Token="xxx"
 
 make run
 ```
@@ -85,6 +88,7 @@ make run
 * `appsettings.{env}.json`：环境名遵循 `dev / test / staging / prod`
 * `Services:SsoService:BaseUrl` / `Services:JobService:BaseUrl`：审核编排流程集群内直连的 Service DNS 地址（非敏感信息，直接写实际 Service 名，见 [deploy/k8s/services/admin-service/deployment.yaml](../../deploy/k8s/services/admin-service/deployment.yaml)）
 * `TenantDatabase:Host` / `TenantDatabase:Port` / `TenantDatabase:Type`：新租户数据库实际落在的目标 MySQL 实例地址，当前复用与 `sys_db` 相同的实例（`config-dev-secret` 的 `mysql-host`/`mysql-port`）
+* `Internal:Token`：调用 sso-service/backend-job-service 内部接口时自动附加的共享密钥，未配置时启动直接抛异常
 
 ## 数据库迁移
 
