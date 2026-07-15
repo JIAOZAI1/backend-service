@@ -52,6 +52,19 @@ public class ReviewService(
         return new ApproveReviewResponse { UserId = userId, Tenant = TenantResponse.FromEntity(tenant), JobId = jobId };
     }
 
+    public async Task RejectAsync(ulong userId, ulong reviewedBy, CancellationToken cancellationToken)
+    {
+        var rejected = await CallStep("reject-user", () => ssoServiceClient.RejectReviewAsync(userId, reviewedBy, cancellationToken));
+        if (!rejected)
+        {
+            throw new NotFoundException($"user {userId} not found");
+        }
+    }
+
+    public Task<PagedResult<SsoUserInfo>> ListUsersAsync(
+        string? reviewStatus, int page, int pageSize, string? sortBy, SortOrder sortOrder, CancellationToken cancellationToken) =>
+        ssoServiceClient.ListUsersAsync(reviewStatus, page, pageSize, sortBy, sortOrder, cancellationToken);
+
     private async Task<Tenant> CreateTenantAsync(DatabaseInstance databaseInstance, ulong reviewedBy, CancellationToken cancellationToken)
     {
         var tenantCode = TenantCodeGenerator.Generate();

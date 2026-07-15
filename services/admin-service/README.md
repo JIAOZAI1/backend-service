@@ -55,7 +55,11 @@ admin-service/
 
 ## 审核与开户
 
-新用户注册后处于 `pending` 待审核状态（字段维护在 sso-service 的 `users` 表），管理员在开户向导里选定目标数据库实例后，通过 [`POST /admin-service/api/v1/reviews/{userId}/approve`](#api-说明)（body: `{"databaseInstanceId": ...}`）触发审核开户，编排逻辑见 [`ReviewService`](src/AdminService.Application/Services/ReviewService.cs)。这是一个**异步**流程：同步部分只做校验和创建开户 Job，成功后立即返回 `{"userId", "tenant", "jobId"}`，前端凭 `jobId` 轮询 backend-job-service 的 [`GET /backend-job-service/api/v1/jobs/{jobId}/status`](../backend-job-service/README.md#api-说明) 得知开户是否完成。
+新用户注册后处于 `pending` 待审核状态（字段维护在 sso-service 的 `users` 表），管理员先通过 [`GET /admin-service/api/v1/reviews/users`](#api-说明)（默认 `reviewStatus=pending`）看到待审核用户列表——本接口只是薄转发，内部直连 sso-service 新增的 `GET /internal/users` 分页查询接口，不在 admin-service 侧落库/缓存用户数据。
+
+管理员在开户向导里选定目标数据库实例后，通过 [`POST /admin-service/api/v1/reviews/{userId}/approve`](#api-说明)（body: `{"databaseInstanceId": ...}`）触发审核开户，编排逻辑见 [`ReviewService`](src/AdminService.Application/Services/ReviewService.cs)。这是一个**异步**流程：同步部分只做校验和创建开户 Job，成功后立即返回 `{"userId", "tenant", "jobId"}`，前端凭 `jobId` 轮询 backend-job-service 的 [`GET /backend-job-service/api/v1/jobs/{jobId}/status`](../backend-job-service/README.md#api-说明) 得知开户是否完成。
+
+管理员也可以拒绝审核：`POST /admin-service/api/v1/reviews/{userId}/reject` 只调用 sso-service 一步，不涉及租户/数据库实例——被拒绝的用户不开户。sso-service 侧会把该用户软删除，**拒绝不可撤销**：拒绝后无法再对同一 `userId` 调用 approve/reject（统一返回 404），但该用户可以用同一 `username`/`email` 重新走注册流程。
 
 同步部分：
 
@@ -147,7 +151,9 @@ Base path: `/admin-service/api/v1`
 | GET | `/admin-service/api/v1/settings` | 列出所有系统级设置 |
 | GET | `/admin-service/api/v1/settings/{key}` | 查询指定设置，不存在返回 404 |
 | PUT | `/admin-service/api/v1/settings/{key}` | 创建或更新指定设置（body: `{"value": "...", "description": "..."}`） |
+| GET | `/admin-service/api/v1/reviews/users` | 分页查询指定审核状态的待审核用户列表，支持 `reviewStatus`（默认 `pending`，也可传 `approved`/`rejected`）/`page`/`pageSize`/`sortBy`（`id`/`createdAt`，非法字段 400）/`sortOrder`，响应体固定为 `items`/`page`/`pageSize`/`total`；内部转发 sso-service 查询，见 [审核与开户](#审核与开户) |
 | POST | `/admin-service/api/v1/reviews/{userId}/approve` | 审核用户注册并触发开户 Job（body: `{"databaseInstanceId"}`），异步：立即返回 `{"userId", "tenant", "jobId"}`，见 [审核与开户](#审核与开户)；用户/数据库实例不存在返回 404，编排失败返回 500 + `{"failedStep", "message"}` |
+| POST | `/admin-service/api/v1/reviews/{userId}/reject` | 拒绝用户注册（不开户），sso-service 侧软删除该用户，拒绝不可撤销，见 [审核与开户](#审核与开户)；用户不存在返回 404，调用 sso-service 失败返回 500 + `{"failedStep", "message"}` |
 | GET | `/admin-service/api/v1/tenants` | 分页查询租户列表，支持 `page`/`pageSize`/`sortBy`（`id`/`tenantCode`/`status`/`createdAt`，非法字段 400）/`sortOrder`，响应体固定为 `items`/`page`/`pageSize`/`total` |
 | GET | `/admin-service/api/v1/database-instances` | 分页查询数据库实例列表，支持 `page`/`pageSize`/`sortBy`（`id`/`name`/`dbType`/`createdAt`/`updatedAt`，非法字段 400）/`sortOrder`，响应体固定为 `items`/`page`/`pageSize`/`total` |
 | GET | `/admin-service/api/v1/database-instances/{id}` | 查询指定数据库实例，不存在返回 404 |

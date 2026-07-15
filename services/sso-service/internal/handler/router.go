@@ -43,8 +43,10 @@ func NewRouter(
 	// 弥补"仅靠网络可达性作为信任边界"的不足：详见 middleware.RequireInternalToken。
 	requireInternalToken := middleware.RequireInternalToken(internalToken)
 	internalUsers := r.Group("/internal/users", requireInternalToken)
+	internalUsers.GET("", internalUserHandler.ListUsersInternal)
 	internalUsers.GET("/:userID", internalUserHandler.GetUserInternal)
 	internalUsers.PUT("/:userID/review", internalUserHandler.ApproveReviewInternal)
+	internalUsers.PUT("/:userID/reject", internalUserHandler.RejectReviewInternal)
 
 	base := r.Group(RoutePrefix)
 	{

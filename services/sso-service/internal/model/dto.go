@@ -47,6 +47,14 @@ func NewUserResponse(u *User, roles []string) UserResponse {
 	}
 }
 
+// PagedUserResponse 是分页列表接口的响应体，字段名固定为 items/page/pageSize/total（规范第 16.4.3 章）。
+type PagedUserResponse struct {
+	Items    []UserResponse `json:"items"`
+	Page     int            `json:"page"`
+	PageSize int            `json:"pageSize"`
+	Total    int64          `json:"total"`
+}
+
 type RoleResponse struct {
 	ID          uint64 `json:"id"`
 	Name        string `json:"name"`

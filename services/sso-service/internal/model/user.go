@@ -27,4 +27,5 @@ const (
 const (
 	UserReviewStatusPending  = "pending"
 	UserReviewStatusApproved = "approved"
+	UserReviewStatusRejected = "rejected"
 )

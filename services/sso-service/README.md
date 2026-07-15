@@ -83,12 +83,14 @@ Base path: `/sso-service/api/v1`
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/internal/auth/verify` | 供网关 ForwardAuth 调用（见 [deploy/k8s/gateway/auth-middleware.yaml](../../deploy/k8s/gateway/auth-middleware.yaml)）：校验 `Authorization: Bearer <access token>` 并查 Redis 黑名单，通过返回 204 及 `X-User-Id`/`X-Username`/`X-User-Roles`（逗号分隔的角色名，实时查库、不依赖 JWT 快照）响应头，失败返回 401。与 `/health` 一样不带网关前缀，仅集群内直连本服务可达 |
-| GET | `/internal/users/{userID}` | 供 admin-service 审核开户流程集群内直连调用：返回用户基本信息（`id`/`username`/`email`/`status`/`reviewStatus`），不存在返回 404 |
+| GET | `/internal/users` | 供 admin-service 开户向导展示待审核用户列表：分页查询指定 `reviewStatus` 的用户（query：`reviewStatus` 默认 `pending`，也可传 `approved`/`rejected`；`page`/`pageSize`/`sortBy`（`id`/`createdAt`）/`sortOrder`，遵循规范第 16.4 章），响应体固定为 `items`/`page`/`pageSize`/`total`。`reviewStatus`/`sortBy` 非法值返回 400 |
+| GET | `/internal/users/{userID}` | 供 admin-service 审核开户流程集群内直连调用：返回用户基本信息（`id`/`username`/`email`/`status`/`reviewStatus`），不存在返回 404（含已被拒绝审核的用户，见下） |
 | PUT | `/internal/users/{userID}/review` | 供 admin-service 审核通过后调用（body: `{"reviewedBy": <管理员用户ID>}`）：把该用户 `review_status` 置为 `approved` 并记录 `reviewed_by`，幂等（重复调用不报错），不存在返回 404 |
+| PUT | `/internal/users/{userID}/reject` | 供 admin-service 审核拒绝后调用（body: `{"reviewedBy": <管理员用户ID>}`）：把该用户 `review_status` 置为 `rejected` 并**软删除**（`deleted_at`），不存在返回 404。拒绝不可撤销——软删除后该用户不再被 `GetUserInternal`/`ApproveReviewInternal`/待审核列表查到，重复调用同一用户返回 404；软删除后允许用同一 `username`/`email` 重新注册（见下文"用户审核字段说明"） |
 
-以上两个内部用户接口均不做用户角色校验，仅信任集群内可信调用方（与 `/internal/auth/verify` 同一设计），不经网关暴露。此外，二者要求请求携带 `X-Internal-Token` 请求头并与配置的 `INTERNAL_API_TOKEN` 一致（见 [`middleware.RequireInternalToken`](internal/middleware/internal_token.go)），否则返回 401——`/internal/auth/verify` 不需要此密钥，它的信任边界完全依赖"仅集群内网关中间件可达"。
+以上四个内部用户接口均不做用户角色校验，仅信任集群内可信调用方（与 `/internal/auth/verify` 同一设计），不经网关暴露。此外，均要求请求携带 `X-Internal-Token` 请求头并与配置的 `INTERNAL_API_TOKEN` 一致（见 [`middleware.RequireInternalToken`](internal/middleware/internal_token.go)），否则返回 401——`/internal/auth/verify` 不需要此密钥，它的信任边界完全依赖"仅集群内网关中间件可达"。
 
-按规范第 16.5 章，本表三个接口对应的 Handler/Service 方法名均带 `Internal` 后缀（`VerifyAuthInternal`、`GetUserInternal`、`ApproveReviewInternal`），与对外业务接口的方法命名区分。
+按规范第 16.5 章，本表接口对应的 Handler/Service 方法名均带 `Internal` 后缀（`VerifyAuthInternal`、`GetUserInternal`、`ApproveReviewInternal`、`RejectReviewInternal`、`ListUsersInternal`），与对外业务接口的方法命名区分。
 
 角色数据每次请求都从数据库实时查询，不依赖 JWT 中的快照，权限变更（分配/移除角色）对已签发的 access token 立即生效，无需重新登录。
 
@@ -115,7 +117,9 @@ SELECT <目标用户ID>, id FROM roles WHERE name = 'admin';
 
 ### 用户审核字段说明
 
-`users` 表额外维护开户审核状态：`review_status`（`pending`/`approved`，新用户注册默认 `pending`）与 `reviewed_by`（审核管理员的用户 ID，未审核时为空）。审核本身由 admin-service 的审核开户流程编排（生成租户、触发建库建用户作业），本服务只被动接受 [`PUT /internal/users/{userID}/review`](#内部接口不经网关暴露) 调用来落地审核结果，不感知租户/作业相关的业务细节。
+`users` 表额外维护开户审核状态：`review_status`（`pending`/`approved`/`rejected`，新用户注册默认 `pending`）与 `reviewed_by`（审核管理员的用户 ID，未审核时为空）。审核本身由 admin-service 的审核开户流程编排（通过后生成租户、触发建库建用户作业），本服务只被动接受 [`PUT /internal/users/{userID}/review`](#内部接口不经网关暴露)/[`PUT /internal/users/{userID}/reject`](#内部接口不经网关暴露) 调用来落地审核结果，不感知租户/作业相关的业务细节。
+
+**拒绝审核会软删除该用户**（`deleted_at`）：`User.DeletedAt` 是普通 `*time.Time`，不是 GORM 特殊的 `gorm.DeletedAt` 类型，不会被自动注入查询过滤，因此 `FindByUsername`/`FindByEmail`/`FindByID`/`ApproveReview`/待审核列表（查 `pending`/`approved` 时）均手动加了 `deleted_at IS NULL` 条件——软删除后的用户对这些查询一律不可见，效果等同于"拒绝不可撤销"：无法再对同一 `userID` 调用 approve/reject，但允许用同一 `username`/`email` 重新走注册流程（唯一性检查同样只看未软删除的行）。例外是查询 `reviewStatus=rejected` 的待审核列表——这个场景故意不过滤 `deleted_at`，否则永远查不到任何已拒绝的用户。
 
 ## 健康检查地址
 

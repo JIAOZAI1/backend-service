@@ -1,3 +1,5 @@
+using AdminService.Application.Common;
+using AdminService.Application.DTOs;
 using AdminService.Application.Exceptions;
 using AdminService.Application.Interfaces;
 using AdminService.Application.Services;
@@ -197,5 +199,64 @@ public class ReviewServiceTests
         var ex = await Should.ThrowAsync<ReviewStepFailedException>(
             () => service.ApproveAsync(userId, DefaultDatabaseInstance.Id, 1, CancellationToken.None));
         ex.Step.ShouldBe("provision-database");
+    }
+
+    [Fact]
+    public async Task RejectAsync_UserExists_CallsSsoServiceReject()
+    {
+        const ulong userId = 42;
+        const ulong reviewedBy = 1;
+
+        _ssoClient.Setup(c => c.RejectReviewAsync(userId, reviewedBy, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var service = CreateService();
+        await service.RejectAsync(userId, reviewedBy, CancellationToken.None);
+
+        _ssoClient.Verify(c => c.RejectReviewAsync(userId, reviewedBy, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RejectAsync_UserNotFound_ThrowsNotFoundException()
+    {
+        _ssoClient.Setup(c => c.RejectReviewAsync(It.IsAny<ulong>(), It.IsAny<ulong>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        var service = CreateService();
+
+        await Should.ThrowAsync<NotFoundException>(() => service.RejectAsync(999, 1, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task RejectAsync_SsoServiceCallFails_ThrowsReviewStepFailedExceptionWithStepName()
+    {
+        _ssoClient.Setup(c => c.RejectReviewAsync(It.IsAny<ulong>(), It.IsAny<ulong>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new HttpRequestException("connection refused"));
+
+        var service = CreateService();
+
+        var ex = await Should.ThrowAsync<ReviewStepFailedException>(() => service.RejectAsync(42, 1, CancellationToken.None));
+        ex.Step.ShouldBe("reject-user");
+    }
+
+    [Fact]
+    public async Task ListUsersAsync_DelegatesToSsoServiceClient()
+    {
+        var expected = new PagedResult<SsoUserInfo>
+        {
+            Items = [new SsoUserInfo(1, "alice", "alice@example.com", "pending")],
+            Page = 1,
+            PageSize = 20,
+            Total = 1,
+        };
+        _ssoClient.Setup(c => c.ListUsersAsync("pending", 1, 20, "createdAt", SortOrder.Asc, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
+
+        var service = CreateService();
+        var result = await service.ListUsersAsync("pending", 1, 20, "createdAt", SortOrder.Asc, CancellationToken.None);
+
+        result.Total.ShouldBe(expected.Total);
+        result.Items.ShouldHaveSingleItem();
+        result.Items[0].Username.ShouldBe("alice");
     }
 }

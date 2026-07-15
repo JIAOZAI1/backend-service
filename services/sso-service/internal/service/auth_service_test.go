@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,35 +39,91 @@ func (f *fakeUserRepo) Create(_ context.Context, u *model.User) error {
 	return nil
 }
 
-func (f *fakeUserRepo) FindByUsername(_ context.Context, username string) (*model.User, error) {
-	if u, ok := f.byUsername[username]; ok {
-		return u, nil
+// findLive 模拟真实仓库的 "deleted_at IS NULL" 过滤：软删除（拒绝审核）的用户查不到。
+func findLive(u *model.User, ok bool) (*model.User, error) {
+	if !ok || u.DeletedAt != nil {
+		return nil, repository.ErrUserNotFound
 	}
-	return nil, repository.ErrUserNotFound
+	return u, nil
+}
+
+func (f *fakeUserRepo) FindByUsername(_ context.Context, username string) (*model.User, error) {
+	u, ok := f.byUsername[username]
+	return findLive(u, ok)
 }
 
 func (f *fakeUserRepo) FindByEmail(_ context.Context, email string) (*model.User, error) {
-	if u, ok := f.byEmail[email]; ok {
-		return u, nil
-	}
-	return nil, repository.ErrUserNotFound
+	u, ok := f.byEmail[email]
+	return findLive(u, ok)
 }
 
 func (f *fakeUserRepo) FindByID(_ context.Context, id uint64) (*model.User, error) {
-	if u, ok := f.byID[id]; ok {
-		return u, nil
-	}
-	return nil, repository.ErrUserNotFound
+	u, ok := f.byID[id]
+	return findLive(u, ok)
 }
 
 func (f *fakeUserRepo) ApproveReview(_ context.Context, id uint64, reviewedBy uint64) error {
-	u, ok := f.byID[id]
-	if !ok {
-		return repository.ErrUserNotFound
+	u, err := findLive(f.byID[id], true)
+	if err != nil {
+		return err
 	}
 	u.ReviewStatus = model.UserReviewStatusApproved
 	u.ReviewedBy = &reviewedBy
 	return nil
+}
+
+// RejectReview 幂等地拒绝并软删除：与真实仓库一致，重复调用已软删除的用户返回 ErrUserNotFound。
+func (f *fakeUserRepo) RejectReview(_ context.Context, id uint64, reviewedBy uint64) error {
+	u, ok := f.byID[id]
+	if !ok || u.DeletedAt != nil {
+		return repository.ErrUserNotFound
+	}
+	now := time.Now()
+	u.ReviewStatus = model.UserReviewStatusRejected
+	u.ReviewedBy = &reviewedBy
+	u.DeletedAt = &now
+	return nil
+}
+
+func (f *fakeUserRepo) ListByReviewStatus(
+	_ context.Context, reviewStatus string, page, pageSize int, sortField repository.UserSortField, sortOrder string,
+) ([]model.User, int64, error) {
+	var matched []model.User
+	for _, u := range f.byID {
+		// rejected 用户靠软删除表示，查这个状态时不排除软删除的行，否则永远查不到（同真实仓库逻辑）。
+		if u.ReviewStatus != reviewStatus {
+			continue
+		}
+		if reviewStatus != model.UserReviewStatusRejected && u.DeletedAt != nil {
+			continue
+		}
+		matched = append(matched, *u)
+	}
+
+	sort.Slice(matched, func(i, j int) bool {
+		var less bool
+		switch sortField {
+		case repository.UserSortFieldID:
+			less = matched[i].ID < matched[j].ID
+		default:
+			less = matched[i].CreatedAt.Before(matched[j].CreatedAt)
+		}
+		if strings.EqualFold(sortOrder, "DESC") {
+			return !less
+		}
+		return less
+	})
+
+	total := int64(len(matched))
+	start := (page - 1) * pageSize
+	if start >= len(matched) {
+		return []model.User{}, total, nil
+	}
+	end := start + pageSize
+	if end > len(matched) {
+		end = len(matched)
+	}
+	return matched[start:end], total, nil
 }
 
 type fakeTokenRepo struct {
