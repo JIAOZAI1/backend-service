@@ -46,7 +46,7 @@ public class JobServiceClient(HttpClient httpClient) : IJobServiceClient
             Name: $"provision-tenant-db-{dbName}",
             Description: "审核开户：创建租户数据库、建用户授权、标记已审核、激活租户",
             ScheduleType: JobScheduleType.OneTime,
-            RunAt: DateTime.UtcNow);
+            RunAt: DateTime.UtcNow.AddSeconds(30));
 
         var jobResponse = await httpClient.PostAsJsonAsync("/backend-job-service/api/v1/jobs", jobRequest, cancellationToken);
         jobResponse.EnsureSuccessStatusCode();

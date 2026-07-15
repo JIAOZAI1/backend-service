@@ -11,7 +11,7 @@ spec:
   forwardAuth:
     # 直连 sso-service 的 K8s Service（不经网关），端点不带 /sso-service 前缀，
     # 与 /health 同级，仅集群内可达（见 sso-service internal/handler/router.go）。
-    address: http://sso-service.default.svc.cluster.local:8080/internal/auth/verify
+    address: http://sso-service.default.svc.cluster.local/internal/auth/verify
     authResponseHeaders:
       # 网关会先删除原请求中客户端自带的同名头，再用校验端点的响应头覆盖写入，
       # 因此后端服务收到的 X-User-Id / X-Username / X-User-Roles 不可能被客户端伪造。

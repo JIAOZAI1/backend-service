@@ -2,7 +2,7 @@ name: backend-job-service
 displayName: 作业调度与执行服务
 language: dotnet
 owner: platform-team
-port: 8080
+port: 80
 healthCheck: /health
 dependencies:
   - mysql

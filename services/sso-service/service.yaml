@@ -2,7 +2,7 @@ name: sso-service
 displayName: 统一登录服务
 language: go
 owner: platform-team
-port: 8080
+port: 80
 healthCheck: /health
 dependencies:
   - mysql
