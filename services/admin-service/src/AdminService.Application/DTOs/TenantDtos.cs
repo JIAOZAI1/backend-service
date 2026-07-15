@@ -32,8 +32,13 @@ public class TenantResponse
     };
 }
 
+public record ApproveReviewRequest(long DatabaseInstanceId);
+
 public class ApproveReviewResponse
 {
     public required ulong UserId { get; init; }
     public required TenantResponse Tenant { get; init; }
+
+    /// <summary>开户作业 ID，前端凭此轮询 GET /backend-job-service/api/v1/jobs/{jobId}/status。</summary>
+    public required long JobId { get; init; }
 }

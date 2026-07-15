@@ -1,5 +1,6 @@
 using System.Text.Json;
 using BackendJobService.Contracts;
+using BackendJobService.Plugins.Internal;
 using MySqlConnector;
 
 namespace BackendJobService.Plugins.MySql;
@@ -10,6 +11,7 @@ namespace BackendJobService.Plugins.MySql;
 ///
 /// parameters_json:
 /// {
+///   "databaseInstanceId": 1,             // 必填，admin-service 已登记的 DatabaseInstance.Id
 ///   "username": "example_user",          // 必填，仅字母数字下划线，长度 1-32
 ///   "password": "***",                   // 必填，由调用方生成并自行保管；不会写入 output
 ///   "host": "%",                         // 可选，默认 "%"
@@ -17,24 +19,27 @@ namespace BackendJobService.Plugins.MySql;
 ///   "privileges": ["SELECT", "INSERT"]   // 可选，默认 ["ALL PRIVILEGES"]，白名单校验
 /// }
 ///
-/// 管理员连接串从环境变量 JOB_PLUGIN_MYSQL_ADMIN_DSN 读取，不通过任务参数传递。
+/// 管理员连接串不通过任务参数传递，见 CreateDatabaseHandler 的同一段说明与
+/// MySqlPluginHelper.ResolveAdminDsnAsync。
 /// </summary>
 [TaskPlugin("mysql-create-user",
     Description = "在目标 MySQL 实例上创建用户并可选授权（幂等，已存在则跳过且不改密码）",
-    Version = "1.0.0")]
+    Version = "1.1.0")]
 public class CreateUserHandler : ITaskHandler
 {
-    private readonly Func<string?> _adminDsnProvider;
+    private readonly Func<HttpClient> _adminServiceClientFactory;
 
-    public CreateUserHandler() : this(MySqlPluginHelper.GetAdminDsnFromEnvironment) { }
+    public CreateUserHandler()
+        : this(() => InternalServiceClientHelper.CreateClient(MySqlPluginHelper.AdminServiceBaseUrlEnvVar)) { }
 
-    /// <summary>测试注入点：替换管理员连接串来源。</summary>
-    internal CreateUserHandler(Func<string?> adminDsnProvider)
+    /// <summary>测试注入点：替换 admin-service HttpClient 来源。</summary>
+    internal CreateUserHandler(Func<HttpClient> adminServiceClientFactory)
     {
-        _adminDsnProvider = adminDsnProvider;
+        _adminServiceClientFactory = adminServiceClientFactory;
     }
 
     private sealed record Parameters(
+        long? DatabaseInstanceId,
         string? Username,
         string? Password,
         string? Host,
@@ -53,7 +58,12 @@ public class CreateUserHandler : ITaskHandler
             return TaskResult.Fail($"parameters_json 不是合法 JSON: {ex.Message}");
         }
 
-        if (string.IsNullOrWhiteSpace(parameters?.Username))
+        if (parameters?.DatabaseInstanceId is null)
+        {
+            return TaskResult.Fail("缺少必填参数 databaseInstanceId");
+        }
+
+        if (string.IsNullOrWhiteSpace(parameters.Username))
         {
             return TaskResult.Fail("缺少必填参数 username");
         }
@@ -89,15 +99,16 @@ public class CreateUserHandler : ITaskHandler
             return TaskResult.Fail($"privileges 含不在白名单内的权限 '{illegalPrivilege}'");
         }
 
-        var adminDsn = _adminDsnProvider();
-        if (string.IsNullOrWhiteSpace(adminDsn))
+        var dsnResult = await MySqlPluginHelper.ResolveAdminDsnAsync(
+            _adminServiceClientFactory, parameters.DatabaseInstanceId.Value, cancellationToken);
+        if (dsnResult.Error is not null)
         {
-            return TaskResult.Fail($"未配置环境变量 {MySqlPluginHelper.AdminDsnEnvVar}（MySQL 管理员连接串）");
+            return TaskResult.Fail(dsnResult.Error);
         }
 
         try
         {
-            await using var connection = new MySqlConnection(adminDsn);
+            await using var connection = new MySqlConnection(dsnResult.Dsn);
             await connection.OpenAsync(cancellationToken);
 
             bool alreadyExisted;

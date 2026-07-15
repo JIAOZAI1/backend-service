@@ -1,5 +1,6 @@
 using System.Text.Json;
 using BackendJobService.Contracts;
+using BackendJobService.Plugins.Internal;
 using MySqlConnector;
 
 namespace BackendJobService.Plugins.MySql;
@@ -9,30 +10,32 @@ namespace BackendJobService.Plugins.MySql;
 ///
 /// parameters_json:
 /// {
+///   "databaseInstanceId": 1,             // 必填，admin-service 已登记的 DatabaseInstance.Id
 ///   "databaseName": "example_db",        // 必填，仅字母数字下划线
 ///   "charset": "utf8mb4",                // 可选，默认 utf8mb4
 ///   "collation": "utf8mb4_general_ci"    // 可选，缺省用 charset 的默认排序规则
 /// }
 ///
-/// 管理员连接串从环境变量 JOB_PLUGIN_MYSQL_ADMIN_DSN 读取（MySqlConnector 连接串格式），
-/// 不通过任务参数传递，避免凭证落库。
+/// 管理员连接串不通过任务参数传递，避免凭证落库：本插件按 databaseInstanceId 现取，调用
+/// admin-service 的 GET /internal/database-instances/{id}/credentials 现取解密后的连接信息。
 /// </summary>
 [TaskPlugin("mysql-create-database",
     Description = "在目标 MySQL 实例上创建数据库（幂等，已存在则跳过）",
-    Version = "1.0.0")]
+    Version = "1.1.0")]
 public class CreateDatabaseHandler : ITaskHandler
 {
-    private readonly Func<string?> _adminDsnProvider;
+    private readonly Func<HttpClient> _adminServiceClientFactory;
 
-    public CreateDatabaseHandler() : this(MySqlPluginHelper.GetAdminDsnFromEnvironment) { }
+    public CreateDatabaseHandler()
+        : this(() => InternalServiceClientHelper.CreateClient(MySqlPluginHelper.AdminServiceBaseUrlEnvVar)) { }
 
-    /// <summary>测试注入点：替换管理员连接串来源。</summary>
-    internal CreateDatabaseHandler(Func<string?> adminDsnProvider)
+    /// <summary>测试注入点：替换 admin-service HttpClient 来源。</summary>
+    internal CreateDatabaseHandler(Func<HttpClient> adminServiceClientFactory)
     {
-        _adminDsnProvider = adminDsnProvider;
+        _adminServiceClientFactory = adminServiceClientFactory;
     }
 
-    private sealed record Parameters(string? DatabaseName, string? Charset, string? Collation);
+    private sealed record Parameters(long? DatabaseInstanceId, string? DatabaseName, string? Charset, string? Collation);
 
     public async Task<TaskResult> ExecuteAsync(TaskExecutionContext context, CancellationToken cancellationToken)
     {
@@ -46,7 +49,12 @@ public class CreateDatabaseHandler : ITaskHandler
             return TaskResult.Fail($"parameters_json 不是合法 JSON: {ex.Message}");
         }
 
-        if (string.IsNullOrWhiteSpace(parameters?.DatabaseName))
+        if (parameters?.DatabaseInstanceId is null)
+        {
+            return TaskResult.Fail("缺少必填参数 databaseInstanceId");
+        }
+
+        if (string.IsNullOrWhiteSpace(parameters.DatabaseName))
         {
             return TaskResult.Fail("缺少必填参数 databaseName");
         }
@@ -67,15 +75,16 @@ public class CreateDatabaseHandler : ITaskHandler
             return TaskResult.Fail($"collation '{parameters.Collation}' 非法");
         }
 
-        var adminDsn = _adminDsnProvider();
-        if (string.IsNullOrWhiteSpace(adminDsn))
+        var dsnResult = await MySqlPluginHelper.ResolveAdminDsnAsync(
+            _adminServiceClientFactory, parameters.DatabaseInstanceId.Value, cancellationToken);
+        if (dsnResult.Error is not null)
         {
-            return TaskResult.Fail($"未配置环境变量 {MySqlPluginHelper.AdminDsnEnvVar}（MySQL 管理员连接串）");
+            return TaskResult.Fail(dsnResult.Error);
         }
 
         try
         {
-            await using var connection = new MySqlConnection(adminDsn);
+            await using var connection = new MySqlConnection(dsnResult.Dsn);
             await connection.OpenAsync(cancellationToken);
 
             bool alreadyExisted;

@@ -41,3 +41,17 @@ public record UpdateDatabaseInstanceRequest(
     int Port,
     string Username,
     string? Password);
+
+/// <summary>
+/// 仅供 /internal/database-instances/{id}/credentials 使用：与 <see cref="DatabaseInstanceResponse"/>
+/// 不同，这里刻意包含解密后的明文密码，供 backend-job-service 的插件现取现用，不落库、不缓存。
+/// </summary>
+public class DatabaseInstanceCredentialsResponse
+{
+    public long Id { get; init; }
+    public required string DbType { get; init; }
+    public required string Host { get; init; }
+    public int Port { get; init; }
+    public required string Username { get; init; }
+    public required string Password { get; init; }
+}

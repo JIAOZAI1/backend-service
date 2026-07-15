@@ -8,7 +8,9 @@
 admin-service/
 ├── src/
 │   ├── AdminService.Api/                 # 入口层：Controllers（含 ReviewController、TenantsController、
-│   │                                        #   DatabaseInstancesController）、中间件（RequireAdminRoleMiddleware）、
+│   │                                        #   DatabaseInstancesController、InternalTenantsController、
+│   │                                        #   InternalDatabaseInstancesController）、中间件
+│   │                                        #   （RequireAdminRoleMiddleware、RequireInternalTokenMiddleware）、
 │   │                                        #   网关身份读取（Auth/GatewayUser）、Program.cs、appsettings
 │   ├── AdminService.Application/         # 应用层：SystemSettingService/ReviewService/TenantQueryService/
 │   │                                        #   DatabaseInstanceService（用例）、DTO、接口定义、
@@ -49,29 +51,50 @@ admin-service/
 
 角色管理（分配/撤销 `admin` 角色）由 sso-service 负责，见 [sso-service README](../sso-service/README.md#api-说明) 的角色管理接口。
 
+`/internal/*` 路径不受 `RequireAdminRoleMiddleware` 约束（见 [`Program.cs`](src/AdminService.Api/Program.cs) 的 `MapWhen` 分支），改由 [`RequireInternalTokenMiddleware`](src/AdminService.Api/Middlewares/RequireInternalTokenMiddleware.cs) 校验，见下文"内部接口"。
+
 ## 审核与开户
 
-新用户注册后处于 `pending` 待审核状态（字段维护在 sso-service 的 `users` 表），管理员通过 [`POST /admin-service/api/v1/reviews/{userId}/approve`](#api-说明) 审核通过并触发自动开户，编排逻辑见 [`ReviewService`](src/AdminService.Application/Services/ReviewService.cs)：
+新用户注册后处于 `pending` 待审核状态（字段维护在 sso-service 的 `users` 表），管理员在开户向导里选定目标数据库实例后，通过 [`POST /admin-service/api/v1/reviews/{userId}/approve`](#api-说明)（body: `{"databaseInstanceId": ...}`）触发审核开户，编排逻辑见 [`ReviewService`](src/AdminService.Application/Services/ReviewService.cs)。这是一个**异步**流程：同步部分只做校验和创建开户 Job，成功后立即返回 `{"userId", "tenant", "jobId"}`，前端凭 `jobId` 轮询 backend-job-service 的 [`GET /backend-job-service/api/v1/jobs/{jobId}/status`](../backend-job-service/README.md#api-说明) 得知开户是否完成。
+
+同步部分：
 
 1. 调用 sso-service `GET /internal/users/{userID}` 校验用户存在
-2. 若该用户尚无租户记录：生成全局唯一的 `tenant_id`（UUID）与 `tenant_code`（12 位小写 base32），写入 `tenants` 表（`status=created`）与 `user_tenants` 关系表；数据库名/用户名固定为 `tenant_{tenant_code}`，密码用 [`SecurePasswordGenerator`](src/AdminService.Application/Common/SecurePasswordGenerator.cs) 生成（16 位，大小写字母+数字+符号，排除易混淆字符）
-3. 调用 backend-job-service `POST /backend-job-service/api/v1/jobs` + `POST .../jobs/{jobId}/tasks` 创建一次性作业，依次挂载内置插件 `mysql-create-database`、`mysql-create-user`（见 [backend-job-service README](../backend-job-service/README.md#内置插件-backendjobserviceplugins)）在目标 MySQL 实例上建库建用户并授权
-4. 调用 sso-service `PUT /internal/users/{userID}/review` 把用户标记为 `approved`
-5. 本地把 `tenants.status` 更新为 `active`（服务期）
+2. 校验 `databaseInstanceId` 对应的 [`DatabaseInstance`](src/AdminService.Domain/Entities/DatabaseInstance.cs) 存在
+3. 若该用户尚无租户记录：生成全局唯一的 `tenant_id`（UUID）与 `tenant_code`（12 位小写 base32），DB 地址取自选中的数据库实例，写入 `tenants` 表（`status=created`，记录 `database_instance_id`）与 `user_tenants` 关系表；数据库名/用户名固定为 `tenant_{tenant_code}`，密码用 [`SecurePasswordGenerator`](src/AdminService.Application/Common/SecurePasswordGenerator.cs) 生成（16 位，大小写字母+数字+符号，排除易混淆字符——这是新建租户数据库用户的密码，与 `DatabaseInstance` 本身的管理员密码是两个不同的密钥）
+4. 调用 backend-job-service `POST /backend-job-service/api/v1/jobs` + `POST .../jobs/{jobId}/tasks` 创建一次性开户作业，按顺序挂载四个任务，返回 `jobId`
 
-**失败处理**：任一步失败均不自动回滚，直接返回 `500 {"failedStep": "...", "message": "..."}`。已落库/已触发的步骤保持原样，管理员可用同一个 `userId` 重新调用同一个审核接口重试——每一步（生成租户/建库建用户/标记已审核）均设计为幂等（`user_tenants` 唯一索引防重复插入，`CreateDatabaseHandler`/`CreateUserHandler` 本身幂等，审核状态更新是覆盖写）。
+四个任务按序执行、前一个失败后续不执行（见 [backend-job-service README](../backend-job-service/README.md#内置插件-backendjobserviceplugins)）：
 
-审核编排调用的 sso-service、backend-job-service 内部接口均走**集群内 Service DNS 直连**（如 `http://sso-service.default.svc.cluster.local`），不经网关，与 sso-service 现有 `/internal/auth/verify` 的设计一致，见 [`AdminService.Infrastructure/ExternalClients`](src/AdminService.Infrastructure/ExternalClients)。
+1. `mysql-create-database`：在目标数据库实例上建库
+2. `mysql-create-user`：建租户数据库用户并授权
+3. `sso-mark-user-reviewed`：调用 sso-service `PUT /internal/users/{userID}/review` 把用户标记为 `approved`
+4. `admin-activate-tenant`：调用本服务的 `PUT /internal/tenants/{tenantId}/activate` 把 `tenants.status` 置为 `active`
 
-仅靠"网络可达性"作为信任边界不足以防止集群内其他 Pod 越权调用这些接口，因此 [`InternalTokenDelegatingHandler`](src/AdminService.Infrastructure/ExternalClients/InternalTokenDelegatingHandler.cs) 会给两个客户端发出的每个请求自动附加 `X-Internal-Token` 请求头（值来自 `Internal:Token` 配置），sso-service/backend-job-service 侧对应校验这个密钥（见各自 README 的"内部调用鉴权"/"内部接口"章节）。三个服务共用同一份密钥（`config-dev-secret` 的 `internal-api-token`）。
+标记审核完成与激活租户挪到 Job 内的 Task 执行，而不是在 `approve` 接口里同步调用——这样"建用户失败"就不会先于失败被误标记为"已审核"（Task 严格按顺序执行，前一个失败后续不执行）。
+
+**失败处理**：同步部分任一步失败直接返回 `ReviewStepFailedException`（controller 转 500 + `{"failedStep": "...", "message": "..."}`）或 404（用户/数据库实例不存在），不自动回滚；已落库/已触发的步骤保持原样，管理员可用同一个 `userId` 重新调用同一个审核接口重试——每一步（生成租户、四个 Task）均设计为幂等（`user_tenants` 唯一索引防重复插入，`CreateDatabaseHandler`/`CreateUserHandler`/`sso-mark-user-reviewed`/`admin-activate-tenant` 本身幂等）。
+
+审核编排调用的 sso-service、backend-job-service 接口均走**集群内 Service DNS 直连**（如 `http://sso-service.default.svc.cluster.local`），不经网关，与 sso-service 现有 `/internal/auth/verify` 的设计一致，见 [`AdminService.Infrastructure/ExternalClients`](src/AdminService.Infrastructure/ExternalClients)。[`InternalTokenDelegatingHandler`](src/AdminService.Infrastructure/ExternalClients/InternalTokenDelegatingHandler.cs) 会给这些出站请求自动附加 `X-Internal-Token` 请求头（值来自 `Internal:Token` 配置），对方服务侧对应校验这个密钥。
+
+## 内部接口
+
+`/internal/*` 路由不带 `admin-service` 网关前缀、不经网关暴露，供集群内其他服务直连调用（规范第 16.5 章），由 [`RequireInternalTokenMiddleware`](src/AdminService.Api/Middlewares/RequireInternalTokenMiddleware.cs) 校验请求携带的 `X-Internal-Token` 与 `Internal:Token` 配置一致（固定时间比较），不做网关身份头豁免——这些路由从设计上就不应被前端/网关触达。
+
+| Method | Path | 说明 |
+| --- | --- | --- |
+| GET | `/internal/database-instances/{id}/credentials` | 供 backend-job-service 的建库/建用户插件按 `databaseInstanceId` 现取解密后的连接信息（`dbType`/`host`/`port`/`username`/`password`），不存在返回 404 |
+| PUT | `/internal/tenants/{tenantId}/activate` | 供 backend-job-service 的 `admin-activate-tenant` 插件在开户 Job 前置任务全部成功后回写租户状态；`{tenantId}` 是 `Tenant.TenantId`（GUID 业务键），不是自增主键；幂等，已是 `Active` 直接返回；不存在返回 404 |
+
+三个服务（sso-service/admin-service/backend-job-service）共用同一份 `Internal:Token`（`config-dev-secret` 的 `internal-api-token`）。
 
 ## 数据库实例管理
 
-管理员注册系统级数据库实例（[`DatabaseInstance`](src/AdminService.Domain/Entities/DatabaseInstance.cs)），供作业场景（backend-job-service）选择目标实例执行作业：
+管理员注册系统级数据库实例（[`DatabaseInstance`](src/AdminService.Domain/Entities/DatabaseInstance.cs)），供开户向导选择目标实例、backend-job-service 按 `databaseInstanceId` 执行建库建用户作业：
 
 * 字段：实例名称（`name`，唯一）、数据库类型（`dbType`，目前仅支持 `mysql`，非法值 400）、实例地址（`host`）、端口（`port`，1-65535）、用户名（`username`）、密码
-* 密码**只加密后落库**（`encrypted_password` 列），任何查询接口（列表、详情）均不回显密码——`DatabaseInstanceResponse` 类型上本就没有密码字段，不是运行时过滤
-* 加密算法固定 AES-256-GCM，实现见共享 SDK [`packages/db-credential-crypto`](../../packages/db-credential-crypto)（Go + .NET 两套实现，密文格式二进制兼容，供本服务写入、backend-job-service 未来执行作业时解密使用），密钥通过 `DbInstanceEncryptionKey` 配置注入（K8s Secret `config-dev-secret` 的 `db-instance-encryption-key`，见 [`AesGcmDbCredentialCipher`](src/AdminService.Infrastructure/Security/AesGcmDbCredentialCipher.cs)）
+* 密码**只加密后落库**（`encrypted_password` 列），面向管理员的查询接口（列表、详情）均不回显密码——`DatabaseInstanceResponse` 类型上本就没有密码字段，不是运行时过滤；解密后的密码只通过 `/internal/database-instances/{id}/credentials` 这一个内部接口现取现用，供 backend-job-service 的插件执行时调用，不落库、不缓存
+* 加密算法固定 AES-256-GCM，实现见共享 SDK [`packages/db-credential-crypto`](../../packages/db-credential-crypto)（Go + .NET 两套实现，密文格式二进制兼容），密钥通过 `DbInstanceEncryptionKey` 配置注入（K8s Secret `config-dev-secret` 的 `db-instance-encryption-key`，见 [`AesGcmDbCredentialCipher`](src/AdminService.Infrastructure/Security/AesGcmDbCredentialCipher.cs)）
 * 编辑（`PUT`）时密码字段可选：不传则保留原密文，不会用空值覆盖；传了才重新加密
 * 删除为软删除（`deleted_at`），与仓库其他资源一致
 
@@ -81,8 +104,6 @@ admin-service/
 export ConnectionStrings__MySql="Server=192.168.8.184;Port=3306;Database=sys_db;User=sys_user;Password=xxx;"
 export Services__SsoService__BaseUrl="http://sso-service.default.svc.cluster.local"
 export Services__JobService__BaseUrl="http://backend-job-service.default.svc.cluster.local"
-export TenantDatabase__Host="192.168.8.184"
-export TenantDatabase__Port="3306"
 export Internal__Token="xxx"
 export DbInstanceEncryptionKey="xxx"   # base64 编码的 32 字节 AES-256 密钥，用 openssl rand -base64 32 生成
 
@@ -100,8 +121,7 @@ make run
 * `appsettings.json`：全局默认值（空的连接串占位）
 * `appsettings.{env}.json`：环境名遵循 `dev / test / staging / prod`
 * `Services:SsoService:BaseUrl` / `Services:JobService:BaseUrl`：审核编排流程集群内直连的 Service DNS 地址（非敏感信息，直接写实际 Service 名，见 [deploy/k8s/services/admin-service/deployment.yaml](../../deploy/k8s/services/admin-service/deployment.yaml)）
-* `TenantDatabase:Host` / `TenantDatabase:Port` / `TenantDatabase:Type`：新租户数据库实际落在的目标 MySQL 实例地址，当前复用与 `sys_db` 相同的实例（`config-dev-secret` 的 `mysql-host`/`mysql-port`）
-* `Internal:Token`：调用 sso-service/backend-job-service 内部接口时自动附加的共享密钥，未配置时启动直接抛异常
+* `Internal:Token`：既用于调用 sso-service/backend-job-service 内部接口时自动附加的共享密钥，也用于校验 backend-job-service 反查本服务 `/internal/*` 接口时携带的同一个密钥（见 [内部接口](#内部接口)），未配置时启动直接抛异常
 * `DbInstanceEncryptionKey`：数据库实例密码的 AES-256-GCM 加密密钥（base64 编码 32 字节），`config-dev-secret` 的 `db-instance-encryption-key`，未配置或长度不对时启动直接抛异常；轮换密钥前需要先用旧密钥解密全部现有数据再用新密钥重新加密，否则旧密文无法解密
 
 ## 数据库迁移
@@ -127,7 +147,7 @@ Base path: `/admin-service/api/v1`
 | GET | `/admin-service/api/v1/settings` | 列出所有系统级设置 |
 | GET | `/admin-service/api/v1/settings/{key}` | 查询指定设置，不存在返回 404 |
 | PUT | `/admin-service/api/v1/settings/{key}` | 创建或更新指定设置（body: `{"value": "...", "description": "..."}`） |
-| POST | `/admin-service/api/v1/reviews/{userId}/approve` | 审核用户注册并自动开户，见 [审核与开户](#审核与开户)；用户不存在返回 404，编排失败返回 500 + `{"failedStep", "message"}` |
+| POST | `/admin-service/api/v1/reviews/{userId}/approve` | 审核用户注册并触发开户 Job（body: `{"databaseInstanceId"}`），异步：立即返回 `{"userId", "tenant", "jobId"}`，见 [审核与开户](#审核与开户)；用户/数据库实例不存在返回 404，编排失败返回 500 + `{"failedStep", "message"}` |
 | GET | `/admin-service/api/v1/tenants` | 分页查询租户列表，支持 `page`/`pageSize`/`sortBy`（`id`/`tenantCode`/`status`/`createdAt`，非法字段 400）/`sortOrder`，响应体固定为 `items`/`page`/`pageSize`/`total` |
 | GET | `/admin-service/api/v1/database-instances` | 分页查询数据库实例列表，支持 `page`/`pageSize`/`sortBy`（`id`/`name`/`dbType`/`createdAt`/`updatedAt`，非法字段 400）/`sortOrder`，响应体固定为 `items`/`page`/`pageSize`/`total` |
 | GET | `/admin-service/api/v1/database-instances/{id}` | 查询指定数据库实例，不存在返回 404 |

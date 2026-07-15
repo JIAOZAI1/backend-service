@@ -20,6 +20,7 @@ public class TenantConfiguration : IEntityTypeConfiguration<Tenant>
         builder.Property(t => t.DbPort).HasColumnName("db_port").IsRequired();
         builder.Property(t => t.DbName).HasColumnName("db_name").HasMaxLength(64).IsRequired();
         builder.Property(t => t.DbUsername).HasColumnName("db_username").HasMaxLength(32).IsRequired();
+        builder.Property(t => t.DatabaseInstanceId).HasColumnName("database_instance_id");
         builder.Property(t => t.DbPassword).HasColumnName("db_password").HasMaxLength(255).IsRequired();
         builder.Property(t => t.ReviewedBy).HasColumnName("reviewed_by").IsRequired();
         builder.Property(t => t.Status).HasColumnName("status")
@@ -35,6 +36,7 @@ public class TenantConfiguration : IEntityTypeConfiguration<Tenant>
         builder.HasIndex(t => t.TenantCode).HasDatabaseName("uk_tenants_tenant_code").IsUnique();
         builder.HasIndex(t => t.DeletedAt).HasDatabaseName("idx_tenants_deleted_at");
         builder.HasIndex(t => t.Status).HasDatabaseName("idx_tenants_status");
+        builder.HasIndex(t => t.DatabaseInstanceId).HasDatabaseName("idx_tenants_database_instance_id");
         builder.HasQueryFilter(t => t.DeletedAt == null);
     }
 }

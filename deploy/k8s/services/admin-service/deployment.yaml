@@ -59,15 +59,10 @@ spec:
               value: "http://sso-service.default.svc.cluster.local"
             - name: Services__JobService__BaseUrl
               value: "http://backend-job-service.default.svc.cluster.local"
-            # 新租户数据库落在与 sys_db 相同的 MySQL 实例（沿用 config-dev-secret 的 mysql-host/mysql-port）
-            - name: TenantDatabase__Type
-              value: "mysql"
-            - name: TenantDatabase__Host
-              value: "$(MYSQL_HOST)"
-            - name: TenantDatabase__Port
-              value: "$(MYSQL_PORT)"
-            # 内部服务间调用共享密钥：调用 sso-service/backend-job-service 内部接口时
-            # 自动附加为 X-Internal-Token 请求头（见 InternalTokenDelegatingHandler）
+            # 内部服务间调用共享密钥：既用于调用 sso-service/backend-job-service 内部接口时
+            # 自动附加为 X-Internal-Token 请求头（见 InternalTokenDelegatingHandler），也用于
+            # 校验 backend-job-service 反查本服务 /internal/* 接口时携带的同一个密钥
+            # （见 RequireInternalTokenMiddleware）
             - name: Internal__Token
               valueFrom:
                 secretKeyRef:

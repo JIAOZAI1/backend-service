@@ -19,6 +19,9 @@ public class TenantRepository(AdminDbContext dbContext) : ITenantRepository
     public Task<Tenant?> GetByIdAsync(long id, CancellationToken cancellationToken) =>
         dbContext.Tenants.FirstOrDefaultAsync(t => t.Id == id, cancellationToken);
 
+    public Task<Tenant?> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken) =>
+        dbContext.Tenants.FirstOrDefaultAsync(t => t.TenantId == tenantId, cancellationToken);
+
     public async Task<(List<Tenant> Items, long Total)> ListPagedAsync(int page, int pageSize, SortSpec sort, CancellationToken cancellationToken)
     {
         if (!_sorters.TryGetValue(sort.SortBy, out var sorter))

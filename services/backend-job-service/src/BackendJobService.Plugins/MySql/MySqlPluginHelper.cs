@@ -1,15 +1,15 @@
+using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using BackendJobService.Plugins.Internal;
 
 namespace BackendJobService.Plugins.MySql;
 
 internal static partial class MySqlPluginHelper
 {
-    /// <summary>
-    /// 管理员连接串环境变量。CREATE DATABASE / CREATE USER 需要管理员权限，凭证不允许
-    /// 出现在 job_tasks.parameters_json 里落库，统一由宿主部署环境注入。
-    /// </summary>
-    public const string AdminDsnEnvVar = "JOB_PLUGIN_MYSQL_ADMIN_DSN";
+    /// <summary>admin-service 的 base URL，供现取 DatabaseInstance 凭据用（见 ResolveAdminDsnAsync）。</summary>
+    public const string AdminServiceBaseUrlEnvVar = "JOB_PLUGIN_ADMIN_SERVICE_BASE_URL";
 
     /// <summary>parameters_json 反序列化选项：camelCase + 大小写不敏感。</summary>
     public static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -50,6 +50,55 @@ internal static partial class MySqlPluginHelper
     public static string EscapeStringLiteral(string value) =>
         value.Replace("\\", "\\\\").Replace("'", "''");
 
-    public static string? GetAdminDsnFromEnvironment() =>
-        Environment.GetEnvironmentVariable(AdminDsnEnvVar);
+    public readonly record struct AdminDsnResult(string? Dsn, string? Error)
+    {
+        public static AdminDsnResult Ok(string dsn) => new(dsn, null);
+        public static AdminDsnResult Fail(string error) => new(null, error);
+    }
+
+    private sealed record CredentialsResponse(string DbType, string Host, int Port, string Username, string Password);
+
+    /// <summary>
+    /// 按 databaseInstanceId 调 admin-service 的 /internal/database-instances/{id}/credentials
+    /// 现取解密后的连接信息，拼成 MySqlConnector DSN。不缓存、不落库，每次任务执行现取现用。
+    /// </summary>
+    public static async Task<AdminDsnResult> ResolveAdminDsnAsync(
+        Func<HttpClient> adminServiceClientFactory, long databaseInstanceId, CancellationToken cancellationToken)
+    {
+        HttpClient client;
+        try
+        {
+            client = adminServiceClientFactory();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return AdminDsnResult.Fail(ex.Message);
+        }
+
+        try
+        {
+            using (client)
+            {
+                var response = await client.GetAsync(
+                    $"/internal/database-instances/{databaseInstanceId}/credentials", cancellationToken);
+
+                if (response.StatusCode == HttpStatusCode.NotFound)
+                {
+                    return AdminDsnResult.Fail($"database instance {databaseInstanceId} not found");
+                }
+
+                response.EnsureSuccessStatusCode();
+
+                var credentials = await response.Content.ReadFromJsonAsync<CredentialsResponse>(cancellationToken)
+                    ?? throw new InvalidOperationException("admin-service returned an empty response body");
+
+                var dsn = $"Server={credentials.Host};Port={credentials.Port};User ID={credentials.Username};Password={credentials.Password};";
+                return AdminDsnResult.Ok(dsn);
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            return AdminDsnResult.Fail($"调用 admin-service 获取数据库实例凭据失败: {ex.Message}");
+        }
+    }
 }

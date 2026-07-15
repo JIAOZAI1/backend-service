@@ -11,13 +11,14 @@ namespace AdminService.Api.Controllers;
 public class ReviewController(IReviewService reviewService) : ControllerBase
 {
     [HttpPost("{userId}/approve")]
-    public async Task<ActionResult<ApproveReviewResponse>> Approve(ulong userId, CancellationToken cancellationToken)
+    public async Task<ActionResult<ApproveReviewResponse>> Approve(
+        ulong userId, [FromBody] ApproveReviewRequest request, CancellationToken cancellationToken)
     {
         var admin = (GatewayUser)HttpContext.Items[nameof(GatewayUser)]!;
 
         try
         {
-            return Ok(await reviewService.ApproveAsync(userId, admin.UserId, cancellationToken));
+            return Ok(await reviewService.ApproveAsync(userId, request.DatabaseInstanceId, admin.UserId, cancellationToken));
         }
         catch (NotFoundException ex)
         {

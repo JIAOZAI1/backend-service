@@ -19,6 +19,10 @@ public class Tenant
     public string DbName { get; set; } = string.Empty;
     public string DbUsername { get; set; } = string.Empty;
     public string DbPassword { get; set; } = string.Empty;
+
+    /// <summary>创建时选中的 DatabaseInstance.Id，可空——本字段引入前创建的租户记录没有这个信息。
+    /// 供后续开户初始化作业（如未来的 init-tenant-schema）追溯该租户库落在哪个已登记实例上。</summary>
+    public long? DatabaseInstanceId { get; set; }
     public ulong ReviewedBy { get; set; }
     public TenantStatus Status { get; set; }
     public DateTime CreatedAt { get; set; }

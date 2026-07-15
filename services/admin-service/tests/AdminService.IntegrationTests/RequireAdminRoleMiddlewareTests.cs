@@ -19,8 +19,6 @@ public class RequireAdminRoleMiddlewareTests : IClassFixture<WebApplicationFacto
         ["ConnectionStrings__MySql"] = "Server=localhost;Port=3306;Database=admin_db_test;User=root;Password=root;",
         ["Services__SsoService__BaseUrl"] = "http://sso-service.default.svc.cluster.local",
         ["Services__JobService__BaseUrl"] = "http://backend-job-service.default.svc.cluster.local",
-        ["TenantDatabase__Host"] = "localhost",
-        ["TenantDatabase__Port"] = "3306",
         ["Internal__Token"] = "test-internal-token",
         ["DbInstanceEncryptionKey"] = "r9lrkFdjjSI03KYHue3SNf5M7EjtUStXSOvxZrLdDHI=",
     };

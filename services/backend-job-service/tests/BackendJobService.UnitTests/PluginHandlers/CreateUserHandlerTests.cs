@@ -1,3 +1,4 @@
+using System.Net;
 using System.Reflection;
 using BackendJobService.Contracts;
 using BackendJobService.Plugins.MySql;
@@ -9,14 +10,24 @@ public class CreateUserHandlerTests
 {
     private static TaskExecutionContext Context(string parametersJson) => new() { ParametersJson = parametersJson };
 
-    // 校验失败必须发生在连接数据库之前，因此这些用例不需要 MySQL 实例；
-    // 连接串来源用注入的 provider 替换，不依赖环境变量。
-    private readonly CreateUserHandler _sut = new(adminDsnProvider: () => null);
+    // 校验失败必须发生在调用 admin-service/连接数据库之前，因此这些用例不需要真实的 HttpClient/MySQL；
+    // admin-service HttpClient 来源用注入的 factory 替换，不依赖环境变量。
+    private static CreateUserHandler Sut(Func<HttpClient>? clientFactory = null) =>
+        new(clientFactory ?? (() => throw new InvalidOperationException("测试用例不应该走到调用 admin-service 这一步")));
+
+    [Fact]
+    public async Task Execute_MissingDatabaseInstanceId_Fails()
+    {
+        var result = await Sut().ExecuteAsync(Context("""{"username": "svc_user", "password": "x"}"""), CancellationToken.None);
+
+        result.Success.ShouldBeFalse();
+        result.ErrorMessage.ShouldNotBeNull().ShouldContain("databaseInstanceId");
+    }
 
     [Fact]
     public async Task Execute_MissingUsername_Fails()
     {
-        var result = await _sut.ExecuteAsync(Context("""{"password": "x"}"""), CancellationToken.None);
+        var result = await Sut().ExecuteAsync(Context("""{"databaseInstanceId": 1, "password": "x"}"""), CancellationToken.None);
 
         result.Success.ShouldBeFalse();
         result.ErrorMessage.ShouldNotBeNull().ShouldContain("username");
@@ -25,7 +36,7 @@ public class CreateUserHandlerTests
     [Fact]
     public async Task Execute_MissingPassword_Fails()
     {
-        var result = await _sut.ExecuteAsync(Context("""{"username": "svc_user"}"""), CancellationToken.None);
+        var result = await Sut().ExecuteAsync(Context("""{"databaseInstanceId": 1, "username": "svc_user"}"""), CancellationToken.None);
 
         result.Success.ShouldBeFalse();
         result.ErrorMessage.ShouldNotBeNull().ShouldContain("password");
@@ -37,8 +48,8 @@ public class CreateUserHandlerTests
     [InlineData("this_username_is_way_longer_than_32_chars")]
     public async Task Execute_IllegalUsername_Fails(string username)
     {
-        var result = await _sut.ExecuteAsync(
-            Context($$"""{"username": {{System.Text.Json.JsonSerializer.Serialize(username)}}, "password": "x"}"""),
+        var result = await Sut().ExecuteAsync(
+            Context($$"""{"databaseInstanceId": 1, "username": {{System.Text.Json.JsonSerializer.Serialize(username)}}, "password": "x"}"""),
             CancellationToken.None);
 
         result.Success.ShouldBeFalse();
@@ -48,8 +59,8 @@ public class CreateUserHandlerTests
     [Fact]
     public async Task Execute_IllegalHost_Fails()
     {
-        var result = await _sut.ExecuteAsync(
-            Context("""{"username": "svc_user", "password": "x", "host": "h'ost"}"""),
+        var result = await Sut().ExecuteAsync(
+            Context("""{"databaseInstanceId": 1, "username": "svc_user", "password": "x", "host": "h'ost"}"""),
             CancellationToken.None);
 
         result.Success.ShouldBeFalse();
@@ -59,8 +70,8 @@ public class CreateUserHandlerTests
     [Fact]
     public async Task Execute_IllegalGrantDatabase_Fails()
     {
-        var result = await _sut.ExecuteAsync(
-            Context("""{"username": "svc_user", "password": "x", "grantDatabase": "bad-db"}"""),
+        var result = await Sut().ExecuteAsync(
+            Context("""{"databaseInstanceId": 1, "username": "svc_user", "password": "x", "grantDatabase": "bad-db"}"""),
             CancellationToken.None);
 
         result.Success.ShouldBeFalse();
@@ -70,8 +81,8 @@ public class CreateUserHandlerTests
     [Fact]
     public async Task Execute_PrivilegeNotInWhitelist_Fails()
     {
-        var result = await _sut.ExecuteAsync(
-            Context("""{"username": "svc_user", "password": "x", "grantDatabase": "ok_db", "privileges": ["SUPER"]}"""),
+        var result = await Sut().ExecuteAsync(
+            Context("""{"databaseInstanceId": 1, "username": "svc_user", "password": "x", "grantDatabase": "ok_db", "privileges": ["SUPER"]}"""),
             CancellationToken.None);
 
         result.Success.ShouldBeFalse();
@@ -79,14 +90,24 @@ public class CreateUserHandlerTests
     }
 
     [Fact]
-    public async Task Execute_AdminDsnNotConfigured_FailsWithEnvVarName()
+    public async Task Execute_CredentialsEndpointNotFound_Fails()
     {
-        var result = await _sut.ExecuteAsync(
-            Context("""{"username": "svc_user", "password": "x"}"""),
-            CancellationToken.None);
+        var client = StubHttpMessageHandler.CreateClient(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
+        var result = await Sut(() => client).ExecuteAsync(
+            Context("""{"databaseInstanceId": 999, "username": "svc_user", "password": "x"}"""), CancellationToken.None);
 
         result.Success.ShouldBeFalse();
-        result.ErrorMessage.ShouldNotBeNull().ShouldContain(MySqlPluginHelper.AdminDsnEnvVar);
+        result.ErrorMessage.ShouldNotBeNull().ShouldContain("999");
+    }
+
+    [Fact]
+    public async Task Execute_AdminServiceBaseUrlNotConfigured_FailsWithEnvVarName()
+    {
+        var result = await new CreateUserHandler(() => throw new InvalidOperationException($"未配置环境变量 {MySqlPluginHelper.AdminServiceBaseUrlEnvVar}"))
+            .ExecuteAsync(Context("""{"databaseInstanceId": 1, "username": "svc_user", "password": "x"}"""), CancellationToken.None);
+
+        result.Success.ShouldBeFalse();
+        result.ErrorMessage.ShouldNotBeNull().ShouldContain(MySqlPluginHelper.AdminServiceBaseUrlEnvVar);
     }
 
     [Fact]

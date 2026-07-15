@@ -54,20 +54,13 @@ spec:
                   key: mysql-password
             - name: ConnectionStrings__MySql
               value: "Server=$(MYSQL_HOST);Port=$(MYSQL_PORT);Database=$(MYSQL_DATABASE);User=$(MYSQL_USERNAME);Password=$(MYSQL_PASSWORD);"
-            # 内置 MySQL 插件（建库/建用户）的管理员连接串：账号与业务账号分开，
-            # MYSQL_ADMIN_* 仅用于拼接下方 DSN，需定义在其之前
-            - name: MYSQL_ADMIN_USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: config-dev-secret
-                  key: mysql-admin-username
-            - name: MYSQL_ADMIN_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: config-dev-secret
-                  key: mysql-admin-password
-            - name: JOB_PLUGIN_MYSQL_ADMIN_DSN
-              value: "Server=$(MYSQL_HOST);Port=$(MYSQL_PORT);User ID=$(MYSQL_ADMIN_USERNAME);Password=$(MYSQL_ADMIN_PASSWORD);"
+            # 内置 MySQL 插件（建库/建用户）不再用固定的管理员连接串，改为按 Job 参数里的
+            # databaseInstanceId 反查 admin-service 现取解密后的连接信息；同 sso-mark-user-reviewed/
+            # admin-activate-tenant 两个开户后续插件，base URL 均走集群内 Service DNS，不经网关
+            - name: JOB_PLUGIN_ADMIN_SERVICE_BASE_URL
+              value: "http://admin-service.default.svc.cluster.local"
+            - name: JOB_PLUGIN_SSO_SERVICE_BASE_URL
+              value: "http://sso-service.default.svc.cluster.local"
             - name: RabbitMq__Host
               valueFrom:
                 secretKeyRef:
@@ -93,7 +86,10 @@ spec:
                 secretKeyRef:
                   name: config-dev-secret
                   key: rabbitmq-password
-            # 内部服务间调用共享密钥（校验 admin-service 直连 POST /jobs、/jobs/{jobId}/tasks 的请求）
+            # 内部服务间调用共享密钥：既用于校验 admin-service 直连 POST /jobs、/jobs/{jobId}/tasks
+            # 的请求，也用于本服务新增插件（mysql-create-database/mysql-create-user/
+            # sso-mark-user-reviewed/admin-activate-tenant）反向调用 admin-service/sso-service
+            # 内部接口时携带的 X-Internal-Token（见 BackendJobService.Plugins/Internal/InternalServiceClientHelper.cs）
             - name: Internal__Token
               valueFrom:
                 secretKeyRef:

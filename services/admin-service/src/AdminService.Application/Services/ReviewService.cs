@@ -11,12 +11,17 @@ public class ReviewService(
     IJobServiceClient jobServiceClient,
     ITenantRepository tenantRepository,
     IUserTenantRepository userTenantRepository,
-    TenantDatabaseOptions tenantDatabaseOptions) : IReviewService
+    IDatabaseInstanceRepository databaseInstanceRepository) : IReviewService
 {
-    public async Task<ApproveReviewResponse> ApproveAsync(ulong userId, ulong reviewedBy, CancellationToken cancellationToken)
+    public async Task<ApproveReviewResponse> ApproveAsync(
+        ulong userId, long databaseInstanceId, ulong reviewedBy, CancellationToken cancellationToken)
     {
         var ssoUser = await CallStep("fetch-user", () => ssoServiceClient.GetUserAsync(userId, cancellationToken))
             ?? throw new NotFoundException($"user {userId} not found");
+
+        var databaseInstance = await CallStep("validate-database-instance",
+                () => databaseInstanceRepository.GetByIdAsync(databaseInstanceId, cancellationToken))
+            ?? throw new NotFoundException($"database instance {databaseInstanceId} not found");
 
         var userTenant = await CallStep("load-existing-tenant", () => userTenantRepository.GetByUserIdAsync(userId, cancellationToken));
 
@@ -29,27 +34,25 @@ public class ReviewService(
         }
         else
         {
-            tenant = await CallStep("create-tenant", () => CreateTenantAsync(reviewedBy, cancellationToken));
+            tenant = await CallStep("create-tenant", () => CreateTenantAsync(databaseInstance, reviewedBy, cancellationToken));
 
             await CallStep("link-user-tenant", () => LinkUserTenantAsync(userId, tenant.Id, cancellationToken));
         }
 
-        await CallStep("provision-database", () => jobServiceClient.CreateTenantProvisioningJobAsync(
-            tenant.DbName, tenant.DbUsername, tenant.DbPassword, cancellationToken));
+        var jobId = await CallStep("provision-database", () => jobServiceClient.CreateTenantProvisioningJobAsync(
+            databaseInstanceId: databaseInstance.Id,
+            dbName: tenant.DbName,
+            dbUsername: tenant.DbUsername,
+            dbPassword: tenant.DbPassword,
+            userId: userId,
+            reviewedBy: reviewedBy,
+            tenantId: tenant.TenantId,
+            cancellationToken));
 
-        await CallStep("mark-user-reviewed", () => ssoServiceClient.ApproveReviewAsync(userId, reviewedBy, cancellationToken));
-
-        if (tenant.Status != TenantStatus.Active)
-        {
-            tenant.Status = TenantStatus.Active;
-            tenant.UpdatedAt = DateTime.UtcNow;
-            await CallStep("activate-tenant", () => tenantRepository.SaveChangesAsync(cancellationToken));
-        }
-
-        return new ApproveReviewResponse { UserId = userId, Tenant = TenantResponse.FromEntity(tenant) };
+        return new ApproveReviewResponse { UserId = userId, Tenant = TenantResponse.FromEntity(tenant), JobId = jobId };
     }
 
-    private async Task<Tenant> CreateTenantAsync(ulong reviewedBy, CancellationToken cancellationToken)
+    private async Task<Tenant> CreateTenantAsync(DatabaseInstance databaseInstance, ulong reviewedBy, CancellationToken cancellationToken)
     {
         var tenantCode = TenantCodeGenerator.Generate();
         var now = DateTime.UtcNow;
@@ -57,12 +60,13 @@ public class ReviewService(
         {
             TenantId = Guid.NewGuid().ToString(),
             TenantCode = tenantCode,
-            DbType = tenantDatabaseOptions.DbType,
-            DbHost = tenantDatabaseOptions.Host,
-            DbPort = tenantDatabaseOptions.Port,
+            DbType = databaseInstance.DbType.ToString().ToLowerInvariant(),
+            DbHost = databaseInstance.Host,
+            DbPort = databaseInstance.Port,
             DbName = $"tenant_{tenantCode}",
             DbUsername = $"tenant_{tenantCode}",
             DbPassword = SecurePasswordGenerator.Generate(),
+            DatabaseInstanceId = databaseInstance.Id,
             ReviewedBy = reviewedBy,
             Status = TenantStatus.Created,
             CreatedAt = now,

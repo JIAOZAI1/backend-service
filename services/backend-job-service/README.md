@@ -54,6 +54,8 @@ export RabbitMq__Port=30672
 export RabbitMq__Username=admin
 export RabbitMq__Password=xxx
 export Internal__Token=xxx
+export JOB_PLUGIN_ADMIN_SERVICE_BASE_URL=http://localhost:5080   # admin-service 本地地址
+export JOB_PLUGIN_SSO_SERVICE_BASE_URL=http://localhost:5090     # sso-service 本地地址
 
 make run
 ```
@@ -67,7 +69,8 @@ make run
 * `appsettings.json`：全局默认值（空的连接串/密码占位）
 * `appsettings.{env}.json`：环境名遵循 `dev / test / staging / prod`
 * `Plugins:Directory`：插件 DLL 所在目录，相对于程序工作目录
-* `Internal:Token`：集群内服务间调用共享密钥，未配置时启动直接抛异常（见下文"内部调用鉴权"）
+* `Internal:Token`：集群内服务间调用共享密钥，既用于校验入站的 `POST /jobs`/`POST /jobs/{jobId}/tasks`（见下文"内部调用鉴权"），也用于本服务插件反向调用 admin-service/sso-service 内部接口时携带的 `X-Internal-Token`，未配置时启动直接抛异常
+* `JOB_PLUGIN_ADMIN_SERVICE_BASE_URL` / `JOB_PLUGIN_SSO_SERVICE_BASE_URL`：内置插件反查 admin-service/sso-service 内部接口时使用的 base URL（集群内 Service DNS，非敏感信息），见下文"内置插件"
 
 ## 数据库迁移
 
@@ -144,14 +147,18 @@ public class MyTaskHandler : ITaskHandler
 
 `src/BackendJobService.Plugins` 是随服务维护的内置插件库，Docker 镜像构建时会发布到 `/app/plugins`；本地联调执行 `make publish-plugins` 发布到 `plugins/` 目录。`pluginAssembly` 填 `BackendJobService.Plugins.dll`。
 
-执行 MySQL 管理操作需要管理员连接串，统一从环境变量 `JOB_PLUGIN_MYSQL_ADMIN_DSN` 读取（MySqlConnector 连接串格式，如 `Server=...;Port=3306;User ID=...;Password=...`），由部署环境注入，禁止写入任务参数落库。
-
 | Handler（handlerType） | 说明 | parameters_json |
 | --- | --- | --- |
-| `BackendJobService.Plugins.MySql.CreateDatabaseHandler` | 创建数据库（幂等，已存在则跳过） | `databaseName`（必填）、`charset`（默认 utf8mb4）、`collation`（可选） |
-| `BackendJobService.Plugins.MySql.CreateUserHandler` | 创建用户并可选授权（幂等，已存在则跳过且不改密码） | `username`/`password`（必填）、`host`（默认 `%`）、`grantDatabase`（可选）、`privileges`（默认 `["ALL PRIVILEGES"]`，白名单校验） |
+| `BackendJobService.Plugins.MySql.CreateDatabaseHandler` | 创建数据库（幂等，已存在则跳过） | `databaseInstanceId`（必填）、`databaseName`（必填）、`charset`（默认 utf8mb4）、`collation`（可选） |
+| `BackendJobService.Plugins.MySql.CreateUserHandler` | 创建用户并可选授权（幂等，已存在则跳过且不改密码） | `databaseInstanceId`（必填）、`username`/`password`（必填）、`host`（默认 `%`）、`grantDatabase`（可选）、`privileges`（默认 `["ALL PRIVILEGES"]`，白名单校验） |
+| `BackendJobService.Plugins.Sso.MarkUserReviewedHandler` | 调用 sso-service 标记用户已审核 | `userId`/`reviewedBy`（必填） |
+| `BackendJobService.Plugins.Admin.ActivateTenantHandler` | 调用 admin-service 把租户状态置为 Active | `tenantId`（必填，`Tenant.TenantId` 业务键） |
 
-安全约定：库名/用户名/host/权限均做白名单校验（非法即失败，不拼接进 SQL）；新用户密码由调用方生成并自行保管，执行结果 `output_json` 不回显密码。
+**MySQL 管理员连接串不再由部署环境固定注入**：`CreateDatabaseHandler`/`CreateUserHandler` 按 `databaseInstanceId` 调用 admin-service 的 `GET /internal/database-instances/{id}/credentials` 现取解密后的连接信息（host/port/username/password），现取现用、不落库、不缓存，拼成 MySqlConnector DSN 后再连接——这样同一个插件可以对接管理员在 admin-service 注册的任意数据库实例，不再局限于单一固定实例。`Sso.MarkUserReviewedHandler`/`Admin.ActivateTenantHandler` 同样通过反查其他服务的内部接口完成动作，而非直接操作数据库。
+
+四个内置插件调用 admin-service/sso-service 时使用的 base URL 与共享密钥统一从环境变量读取，见 [`InternalServiceClientHelper`](src/BackendJobService.Plugins/Internal/InternalServiceClientHelper.cs)：`JOB_PLUGIN_ADMIN_SERVICE_BASE_URL`/`JOB_PLUGIN_SSO_SERVICE_BASE_URL` 给出目标服务的 Service DNS，`Internal__Token`（与本服务入站鉴权用的同一个环境变量）作为 `X-Internal-Token` 请求头附加到每个出站请求上。插件运行在 `Activator.CreateInstance` 构造的对象里，没有 DI 容器，因此 `HttpClient` 是手动构造的，不经过 `IHttpClientFactory`。
+
+安全约定：库名/用户名/host/权限均做白名单校验（非法即失败，不拼接进 SQL）；新用户密码由调用方生成并自行保管，执行结果 `output_json` 不回显密码；数据库实例的管理员密码只在插件执行期间的内存中短暂持有，不落库、不写入 `output_json`。
 
 ## 健康检查地址
 
