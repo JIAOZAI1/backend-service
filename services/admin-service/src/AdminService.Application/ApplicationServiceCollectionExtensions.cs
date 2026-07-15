@@ -13,6 +13,7 @@ public static class ApplicationServiceCollectionExtensions
         services.AddScoped<ITenantQueryService, TenantQueryService>();
         services.AddScoped<ITenantInternalService, TenantInternalService>();
         services.AddScoped<IDatabaseInstanceService, DatabaseInstanceService>();
+        services.AddScoped<IUserManagementService, UserManagementService>();
 
         return services;
     }

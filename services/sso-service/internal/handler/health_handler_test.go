@@ -10,6 +10,7 @@ import (
 
 	"github.com/company/sso-service/internal/handler"
 	"github.com/company/sso-service/internal/model"
+	"github.com/company/sso-service/internal/repository"
 	"github.com/company/sso-service/pkg/jwtutil"
 )
 
@@ -27,8 +28,22 @@ func (f fakeRoleLister) ListByUserID(_ context.Context, userID uint64) ([]model.
 	return f.roles[userID], nil
 }
 
+// fakeTenantLister 模拟 repository.TenantRepository：找不到 active 租户时返回
+// repository.ErrTenantNotFound，与真实实现的哨兵值语义一致。
+type fakeTenantLister struct {
+	tenantCodes map[uint64]string
+}
+
+func (f fakeTenantLister) GetActiveTenantCodeByUserID(_ context.Context, userID uint64) (string, error) {
+	code, ok := f.tenantCodes[userID]
+	if !ok {
+		return "", repository.ErrTenantNotFound
+	}
+	return code, nil
+}
+
 func TestHealthRoute(t *testing.T) {
-	router := handler.NewRouter(nil, nil, nil, jwtutil.NewIssuer("secret", "issuer"), noopBlacklist{}, fakeRoleLister{}, "test-internal-token")
+	router := handler.NewRouter(nil, nil, nil, jwtutil.NewIssuer("secret", "issuer"), noopBlacklist{}, fakeRoleLister{}, fakeTenantLister{}, "test-internal-token")
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()

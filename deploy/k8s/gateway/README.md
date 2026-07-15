@@ -25,7 +25,7 @@
 
 1. 网关把每个请求的头转发给 sso-service 的集群内部端点 `GET /internal/auth/verify`；
 2. sso-service 复用自身逻辑做 JWT 验签 + Redis 黑名单检查（登出即时生效）；
-3. 校验通过（204）时，网关**删除客户端自带的同名头**，把校验端点返回的 `X-User-Id`/`X-Username`/`X-User-Roles` 写入原请求转发给后端——后端服务直接信任这些头，无需解析 JWT、不持有 JWT 密钥；`X-User-Roles` 为逗号分隔的角色名列表，sso-service 每次请求实时查库生成，不依赖 JWT 快照，角色变更立即生效；
+3. 校验通过（204）时，网关**删除客户端自带的同名头**，把校验端点返回的 `X-User-Id`/`X-Username`/`X-User-Roles`/`X-Tenant-Code` 写入原请求转发给后端——后端服务直接信任这些头，无需解析 JWT、不持有 JWT 密钥；`X-User-Roles` 为逗号分隔的角色名列表，`X-Tenant-Code` 是当前用户所属 active 租户的 tenant_code（sso-service 直接查 admin-service 拥有的 tenants/user_tenants 表得出，两个服务共用同一个 MySQL 数据库，不经 HTTP 调用；用户未开户或租户非 active 状态时该头缺失，下游服务需自行处理），二者均每次请求实时查库生成，不依赖 JWT 快照，角色变更/开户/租户状态变化立即生效；
 4. 校验失败时，sso-service 的 401 响应原样返回给客户端。
 
 注意：这些头只有**经网关转发**的请求才可信；集群内直连服务不经过校验，应通过 NetworkPolicy 或访问约定禁止绕过网关调用业务服务。
@@ -57,7 +57,7 @@
         name: http
 ```
 
-同时更新 [docs/route-mapping.md](../../../docs/route-mapping.md)。新服务从 `X-User-Id`/`X-Username`/`X-User-Roles` 请求头读取当前用户及角色（参考 backend-job-service 的 `GatewayUser`、admin-service 的 `GatewayUser` + `RequireAdminRole`），无需自行解析 JWT。
+同时更新 [docs/route-mapping.md](../../../docs/route-mapping.md)。新服务从 `X-User-Id`/`X-Username`/`X-User-Roles`/`X-Tenant-Code` 请求头读取当前用户、角色、所属租户（参考 backend-job-service 的 `GatewayUser`、admin-service 的 `GatewayUser` + `RequireAdminRole`），无需自行解析 JWT；`X-Tenant-Code` 可能缺失（用户未开户或租户非 active），读取前需判空。
 
 ## 部署
 

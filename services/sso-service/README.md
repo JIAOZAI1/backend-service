@@ -82,7 +82,7 @@ Base path: `/sso-service/api/v1`
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET | `/internal/auth/verify` | 供网关 ForwardAuth 调用（见 [deploy/k8s/gateway/auth-middleware.yaml](../../deploy/k8s/gateway/auth-middleware.yaml)）：校验 `Authorization: Bearer <access token>` 并查 Redis 黑名单，通过返回 204 及 `X-User-Id`/`X-Username`/`X-User-Roles`（逗号分隔的角色名，实时查库、不依赖 JWT 快照）响应头，失败返回 401。与 `/health` 一样不带网关前缀，仅集群内直连本服务可达 |
+| GET | `/internal/auth/verify` | 供网关 ForwardAuth 调用（见 [deploy/k8s/gateway/auth-middleware.yaml](../../deploy/k8s/gateway/auth-middleware.yaml)）：校验 `Authorization: Bearer <access token>` 并查 Redis 黑名单，通过返回 204 及 `X-User-Id`/`X-Username`/`X-User-Roles`（逗号分隔的角色名，实时查库、不依赖 JWT 快照）/`X-Tenant-Code`（当前用户所属 active 租户的 tenant_code，同样实时查库；找不到 active 租户时该头缺失，不是错误——未开户、租户还在 created/审核中、已 expired/cancelled 均属此类）响应头，失败返回 401。与 `/health` 一样不带网关前缀，仅集群内直连本服务可达 |
 | GET | `/internal/users` | 供 admin-service 开户向导展示待审核用户列表：分页查询指定 `reviewStatus` 的用户（query：`reviewStatus` 默认 `pending`，也可传 `approved`/`rejected`；`page`/`pageSize`/`sortBy`（`id`/`createdAt`）/`sortOrder`，遵循规范第 16.4 章），响应体固定为 `items`/`page`/`pageSize`/`total`。`reviewStatus`/`sortBy` 非法值返回 400 |
 | GET | `/internal/users/{userID}` | 供 admin-service 审核开户流程集群内直连调用：返回用户基本信息（`id`/`username`/`email`/`status`/`reviewStatus`），不存在返回 404（含已被拒绝审核的用户，见下） |
 | PUT | `/internal/users/{userID}/review` | 供 admin-service 审核通过后调用（body: `{"reviewedBy": <管理员用户ID>}`）：把该用户 `review_status` 置为 `approved` 并记录 `reviewed_by`，幂等（重复调用不报错），不存在返回 404 |
@@ -120,6 +120,22 @@ SELECT <目标用户ID>, id FROM roles WHERE name = 'admin';
 `users` 表额外维护开户审核状态：`review_status`（`pending`/`approved`/`rejected`，新用户注册默认 `pending`）与 `reviewed_by`（审核管理员的用户 ID，未审核时为空）。审核本身由 admin-service 的审核开户流程编排（通过后生成租户、触发建库建用户作业），本服务只被动接受 [`PUT /internal/users/{userID}/review`](#内部接口不经网关暴露)/[`PUT /internal/users/{userID}/reject`](#内部接口不经网关暴露) 调用来落地审核结果，不感知租户/作业相关的业务细节。
 
 **拒绝审核会软删除该用户**（`deleted_at`）：`User.DeletedAt` 是普通 `*time.Time`，不是 GORM 特殊的 `gorm.DeletedAt` 类型，不会被自动注入查询过滤，因此 `FindByUsername`/`FindByEmail`/`FindByID`/`ApproveReview`/待审核列表（查 `pending`/`approved` 时）均手动加了 `deleted_at IS NULL` 条件——软删除后的用户对这些查询一律不可见，效果等同于"拒绝不可撤销"：无法再对同一 `userID` 调用 approve/reject，但允许用同一 `username`/`email` 重新走注册流程（唯一性检查同样只看未软删除的行）。例外是查询 `reviewStatus=rejected` 的待审核列表——这个场景故意不过滤 `deleted_at`，否则永远查不到任何已拒绝的用户。
+
+### 租户解析说明（X-Tenant-Code）
+
+`/internal/auth/verify` 返回的 `X-Tenant-Code` 头，是本服务直接查询 admin-service 拥有的 `tenants`/`user_tenants` 表得出的——两个服务共用同一个 MySQL 数据库（`sys_db`），因此这里选择建表映射直接 JOIN 查询，而不是发 HTTP 请求到 admin-service：
+
+```sql
+SELECT tenants.tenant_code
+FROM user_tenants
+JOIN tenants ON tenants.id = user_tenants.tenant_id
+WHERE user_tenants.user_id = ? AND user_tenants.deleted_at IS NULL
+  AND tenants.status = 'active' AND tenants.deleted_at IS NULL
+```
+
+见 [`TenantRepository.GetActiveTenantCodeByUserID`](internal/repository/tenant_repository.go)。只认 `status=active` 的租户——`created`（开户流程未走完）、`expired`（License 已过期）、`cancelled`（已取消）均视为"当前无有效租户"，找不到时 `VerifyAuthInternal` 不设置该响应头（不是错误，很多用户本就不属于任何租户，比如系统管理员）。这个查询与 `roles` 现有的"每次请求实时查库、不放进 JWT"设计保持一致：开户/续期/取消对下一次请求立即生效，不需要用户重新登录或刷新 token。
+
+[`internal/model/tenant.go`](internal/model/tenant.go) 里的 `Tenant`/`UserTenant` 结构体只是这两张表的只读镜像（字段只声明本服务查询用得到的列），表结构以 admin-service 的迁移脚本为准，本服务不对这两张表做任何写操作。
 
 ## 健康检查地址
 

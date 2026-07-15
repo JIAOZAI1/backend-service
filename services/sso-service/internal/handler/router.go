@@ -23,6 +23,7 @@ func NewRouter(
 	issuer *jwtutil.Issuer,
 	blacklist middleware.BlacklistChecker,
 	roleLister middleware.UserRoleLister,
+	tenantLister middleware.TenantLister,
 	internalToken string,
 ) *gin.Engine {
 	r := gin.New()
@@ -36,7 +37,7 @@ func NewRouter(
 
 	// 网关 ForwardAuth 校验端点（见 deploy/k8s/gateway/auth-middleware.yaml）：
 	// 同 /health 一样不带前缀，网关 Middleware 直连本服务 Service 访问，不经网关暴露
-	r.GET("/internal/auth/verify", requireAuth, VerifyAuthInternal(roleLister))
+	r.GET("/internal/auth/verify", requireAuth, VerifyAuthInternal(roleLister, tenantLister))
 
 	// 供集群内其他服务直连调用（如 admin-service 审核开户流程），不经网关暴露。
 	// 不做用户角色校验，但要求调用方携带集群内共享密钥（RequireInternalToken），

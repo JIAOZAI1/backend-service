@@ -23,6 +23,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<ITenantRepository, TenantRepository>();
         services.AddScoped<IUserTenantRepository, UserTenantRepository>();
         services.AddScoped<IDatabaseInstanceRepository, DatabaseInstanceRepository>();
+        services.AddScoped<IUserManagementRepository, UserManagementRepository>();
 
         var dbInstanceEncryptionKey = configuration["DbInstanceEncryptionKey"]
             ?? throw new InvalidOperationException("DbInstanceEncryptionKey is not configured");

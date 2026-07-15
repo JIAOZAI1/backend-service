@@ -10,6 +10,11 @@ public class AdminDbContext(DbContextOptions<AdminDbContext> options) : DbContex
     public DbSet<UserTenant> UserTenants => Set<UserTenant>();
     public DbSet<DatabaseInstance> DatabaseInstances => Set<DatabaseInstance>();
 
+    // sso-service 拥有的表，本服务只读/仅密码重置写，见 SsoUser.cs 顶部说明。
+    public DbSet<SsoUser> SsoUsers => Set<SsoUser>();
+    public DbSet<SsoRole> SsoRoles => Set<SsoRole>();
+    public DbSet<SsoUserRole> SsoUserRoles => Set<SsoUserRole>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AdminDbContext).Assembly);

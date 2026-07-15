@@ -52,6 +52,7 @@ func main() {
 	userRepo := repository.NewUserRepository(db)
 	tokenRepo := repository.NewTokenRepository(rdb)
 	roleRepo := repository.NewRoleRepository(db)
+	tenantRepo := repository.NewTenantRepository(db)
 
 	jwtIssuer := jwtutil.NewIssuer(cfg.JWT.Secret, cfg.JWT.Issuer)
 
@@ -64,7 +65,7 @@ func main() {
 	internalUserService := service.NewInternalUserService(userRepo)
 	internalUserHandler := handler.NewInternalUserHandler(internalUserService)
 
-	router := handler.NewRouter(authHandler, roleHandler, internalUserHandler, jwtIssuer, tokenRepo, roleRepo, cfg.Internal.Token)
+	router := handler.NewRouter(authHandler, roleHandler, internalUserHandler, jwtIssuer, tokenRepo, roleRepo, tenantRepo, cfg.Internal.Token)
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.App.Port),
