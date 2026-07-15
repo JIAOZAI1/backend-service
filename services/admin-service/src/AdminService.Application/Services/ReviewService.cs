@@ -14,8 +14,13 @@ public class ReviewService(
     IDatabaseInstanceRepository databaseInstanceRepository) : IReviewService
 {
     public async Task<ApproveReviewResponse> ApproveAsync(
-        ulong userId, long databaseInstanceId, ulong reviewedBy, CancellationToken cancellationToken)
+        ulong userId, long databaseInstanceId, DateTime licenseExpiresAt, ulong reviewedBy, CancellationToken cancellationToken)
     {
+        if (licenseExpiresAt <= DateTime.UtcNow)
+        {
+            throw new ValidationException("licenseExpiresAt must be in the future");
+        }
+
         var ssoUser = await CallStep("fetch-user", () => ssoServiceClient.GetUserAsync(userId, cancellationToken))
             ?? throw new NotFoundException($"user {userId} not found");
 
@@ -34,7 +39,7 @@ public class ReviewService(
         }
         else
         {
-            tenant = await CallStep("create-tenant", () => CreateTenantAsync(databaseInstance, reviewedBy, cancellationToken));
+            tenant = await CallStep("create-tenant", () => CreateTenantAsync(databaseInstance, licenseExpiresAt, reviewedBy, cancellationToken));
 
             await CallStep("link-user-tenant", () => LinkUserTenantAsync(userId, tenant.Id, cancellationToken));
         }
@@ -65,7 +70,8 @@ public class ReviewService(
         string? reviewStatus, int page, int pageSize, string? sortBy, SortOrder sortOrder, CancellationToken cancellationToken) =>
         ssoServiceClient.ListUsersAsync(reviewStatus, page, pageSize, sortBy, sortOrder, cancellationToken);
 
-    private async Task<Tenant> CreateTenantAsync(DatabaseInstance databaseInstance, ulong reviewedBy, CancellationToken cancellationToken)
+    private async Task<Tenant> CreateTenantAsync(
+        DatabaseInstance databaseInstance, DateTime licenseExpiresAt, ulong reviewedBy, CancellationToken cancellationToken)
     {
         var tenantCode = TenantCodeGenerator.Generate();
         var now = DateTime.UtcNow;
@@ -79,6 +85,7 @@ public class ReviewService(
             DbName = $"tenant_{tenantCode}",
             DbUsername = $"tenant_{tenantCode}",
             DbPassword = SecurePasswordGenerator.Generate(),
+            LicenseExpiresAt = licenseExpiresAt,
             DatabaseInstanceId = databaseInstance.Id,
             ReviewedBy = reviewedBy,
             Status = TenantStatus.Created,

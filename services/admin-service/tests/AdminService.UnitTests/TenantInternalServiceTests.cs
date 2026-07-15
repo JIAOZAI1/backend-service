@@ -68,4 +68,38 @@ public class TenantInternalServiceTests
 
         await Should.ThrowAsync<NotFoundException>(() => service.ActivateAsync("missing-tenant-id", CancellationToken.None));
     }
+
+    [Fact]
+    public async Task ExpireOverdueTenantsAsync_OverdueTenantsFound_ExpiresAllAndSavesOnce()
+    {
+        var overdueTenant1 = NewTenant(TenantStatus.Active);
+        var overdueTenant2 = NewTenant(TenantStatus.Active);
+        overdueTenant2.Id = 8;
+        overdueTenant2.TenantId = "another-tenant-id";
+
+        _tenantRepository.Setup(r => r.ListOverdueActiveTenantsAsync(It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([overdueTenant1, overdueTenant2]);
+        _tenantRepository.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        var service = CreateService();
+        var expiredCount = await service.ExpireOverdueTenantsAsync(CancellationToken.None);
+
+        expiredCount.ShouldBe(2);
+        overdueTenant1.Status.ShouldBe(TenantStatus.Expired);
+        overdueTenant2.Status.ShouldBe(TenantStatus.Expired);
+        _tenantRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task ExpireOverdueTenantsAsync_NoOverdueTenants_SkipsSaveAndReturnsZero()
+    {
+        _tenantRepository.Setup(r => r.ListOverdueActiveTenantsAsync(It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+
+        var service = CreateService();
+        var expiredCount = await service.ExpireOverdueTenantsAsync(CancellationToken.None);
+
+        expiredCount.ShouldBe(0);
+        _tenantRepository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
 }

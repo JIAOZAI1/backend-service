@@ -28,6 +28,8 @@ public class ReviewServiceTests
         EncryptedPassword = "cipher-text",
     };
 
+    private static readonly DateTime FutureLicenseExpiresAt = DateTime.UtcNow.AddYears(1);
+
     private ReviewService CreateService() => new(
         _ssoClient.Object,
         _jobClient.Object,
@@ -72,7 +74,8 @@ public class ReviewServiceTests
             .ReturnsAsync(123L);
 
         var service = CreateService();
-        var result = await service.ApproveAsync(userId, DefaultDatabaseInstance.Id, reviewedBy, CancellationToken.None);
+        var result = await service.ApproveAsync(
+            userId, DefaultDatabaseInstance.Id, FutureLicenseExpiresAt, reviewedBy, CancellationToken.None);
 
         result.UserId.ShouldBe(userId);
         result.JobId.ShouldBe(123L);
@@ -80,6 +83,7 @@ public class ReviewServiceTests
         result.Tenant.DbUsername.ShouldBe(result.Tenant.DbName);
         result.Tenant.DbHost.ShouldBe(DefaultDatabaseInstance.Host);
         result.Tenant.DbPort.ShouldBe(DefaultDatabaseInstance.Port);
+        result.Tenant.LicenseExpiresAt.ShouldBe(FutureLicenseExpiresAt);
         // 同步部分不再置 Active——留给 Job 内的 admin-activate-tenant 任务完成
         result.Tenant.Status.ShouldBe(TenantStatus.Created);
 
@@ -134,7 +138,8 @@ public class ReviewServiceTests
             .ReturnsAsync(456L);
 
         var service = CreateService();
-        var result = await service.ApproveAsync(userId, DefaultDatabaseInstance.Id, reviewedBy, CancellationToken.None);
+        var result = await service.ApproveAsync(
+            userId, DefaultDatabaseInstance.Id, FutureLicenseExpiresAt, reviewedBy, CancellationToken.None);
 
         result.JobId.ShouldBe(456L);
         result.Tenant.TenantCode.ShouldBe(existingTenant.TenantCode);
@@ -151,7 +156,8 @@ public class ReviewServiceTests
 
         var service = CreateService();
 
-        await Should.ThrowAsync<NotFoundException>(() => service.ApproveAsync(1, DefaultDatabaseInstance.Id, 1, CancellationToken.None));
+        await Should.ThrowAsync<NotFoundException>(
+            () => service.ApproveAsync(1, DefaultDatabaseInstance.Id, FutureLicenseExpiresAt, 1, CancellationToken.None));
     }
 
     [Fact]
@@ -166,7 +172,8 @@ public class ReviewServiceTests
 
         var service = CreateService();
 
-        await Should.ThrowAsync<NotFoundException>(() => service.ApproveAsync(userId, 999, 1, CancellationToken.None));
+        await Should.ThrowAsync<NotFoundException>(
+            () => service.ApproveAsync(userId, 999, FutureLicenseExpiresAt, 1, CancellationToken.None));
 
         _jobClient.Verify(c => c.CreateTenantProvisioningJobAsync(
             It.IsAny<long>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
@@ -197,8 +204,69 @@ public class ReviewServiceTests
         var service = CreateService();
 
         var ex = await Should.ThrowAsync<ReviewStepFailedException>(
-            () => service.ApproveAsync(userId, DefaultDatabaseInstance.Id, 1, CancellationToken.None));
+            () => service.ApproveAsync(userId, DefaultDatabaseInstance.Id, FutureLicenseExpiresAt, 1, CancellationToken.None));
         ex.Step.ShouldBe("provision-database");
+    }
+
+    [Fact]
+    public async Task ApproveAsync_LicenseExpiresAtInThePast_ThrowsValidationExceptionWithoutCallingSso()
+    {
+        var service = CreateService();
+
+        await Should.ThrowAsync<ValidationException>(
+            () => service.ApproveAsync(42, DefaultDatabaseInstance.Id, DateTime.UtcNow.AddDays(-1), 1, CancellationToken.None));
+
+        _ssoClient.Verify(c => c.GetUserAsync(It.IsAny<ulong>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ApproveAsync_UserAlreadyHasTenant_DoesNotOverwriteExistingLicenseExpiresAt()
+    {
+        const ulong userId = 42;
+        const ulong reviewedBy = 1;
+        var originalLicenseExpiresAt = DateTime.UtcNow.AddMonths(6);
+
+        var existingTenant = new Tenant
+        {
+            Id = 7,
+            TenantId = Guid.NewGuid().ToString(),
+            TenantCode = "abcd1234wxyz",
+            DbType = "mysql",
+            DbHost = "192.168.8.184",
+            DbPort = 3306,
+            DbName = "tenant_abcd1234wxyz",
+            DbUsername = "tenant_abcd1234wxyz",
+            DbPassword = "existing-password",
+            LicenseExpiresAt = originalLicenseExpiresAt,
+            DatabaseInstanceId = DefaultDatabaseInstance.Id,
+            ReviewedBy = reviewedBy,
+            Status = TenantStatus.Active,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+        };
+
+        _ssoClient.Setup(c => c.GetUserAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SsoUserInfo(userId, "alice", "alice@example.com", "approved"));
+        _databaseInstanceRepository.Setup(r => r.GetByIdAsync(DefaultDatabaseInstance.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(DefaultDatabaseInstance);
+        _userTenantRepository.Setup(r => r.GetByUserIdAsync(userId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new UserTenant { Id = 1, UserId = userId, TenantId = existingTenant.Id, CreatedAt = DateTime.UtcNow });
+        _tenantRepository.Setup(r => r.GetByIdAsync(existingTenant.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existingTenant);
+        _jobClient.Setup(c => c.CreateTenantProvisioningJobAsync(
+                DefaultDatabaseInstance.Id,
+                existingTenant.DbName, existingTenant.DbUsername, existingTenant.DbPassword,
+                userId, reviewedBy, existingTenant.TenantId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(456L);
+
+        var service = CreateService();
+        // 用一个不同的到期时间重新调用 approve——幂等短路分支不应覆盖已有的到期时间
+        var differentLicenseExpiresAt = DateTime.UtcNow.AddYears(2);
+        var result = await service.ApproveAsync(
+            userId, DefaultDatabaseInstance.Id, differentLicenseExpiresAt, reviewedBy, CancellationToken.None);
+
+        result.Tenant.LicenseExpiresAt.ShouldBe(originalLicenseExpiresAt);
     }
 
     [Fact]

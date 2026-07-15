@@ -12,6 +12,7 @@ public class TenantResponse
     public int DbPort { get; init; }
     public required string DbName { get; init; }
     public required string DbUsername { get; init; }
+    public DateTime? LicenseExpiresAt { get; init; }
     public ulong ReviewedBy { get; init; }
     public TenantStatus Status { get; init; }
     public DateTime CreatedAt { get; init; }
@@ -26,13 +27,14 @@ public class TenantResponse
         DbPort = tenant.DbPort,
         DbName = tenant.DbName,
         DbUsername = tenant.DbUsername,
+        LicenseExpiresAt = tenant.LicenseExpiresAt,
         ReviewedBy = tenant.ReviewedBy,
         Status = tenant.Status,
         CreatedAt = tenant.CreatedAt,
     };
 }
 
-public record ApproveReviewRequest(long DatabaseInstanceId);
+public record ApproveReviewRequest(long DatabaseInstanceId, DateTime LicenseExpiresAt);
 
 public class ApproveReviewResponse
 {

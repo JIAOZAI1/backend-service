@@ -38,6 +38,11 @@ public class TenantRepository(AdminDbContext dbContext) : ITenantRepository
         return (items, total);
     }
 
+    public Task<List<Tenant>> ListOverdueActiveTenantsAsync(DateTime asOf, CancellationToken cancellationToken) =>
+        dbContext.Tenants
+            .Where(t => t.Status == TenantStatus.Active && t.LicenseExpiresAt != null && t.LicenseExpiresAt < asOf)
+            .ToListAsync(cancellationToken);
+
     public async Task AddAsync(Tenant tenant, CancellationToken cancellationToken) =>
         await dbContext.Tenants.AddAsync(tenant, cancellationToken);
 

@@ -20,4 +20,23 @@ public class TenantInternalService(ITenantRepository tenantRepository) : ITenant
         tenant.UpdatedAt = DateTime.UtcNow;
         await tenantRepository.SaveChangesAsync(cancellationToken);
     }
+
+    public async Task<int> ExpireOverdueTenantsAsync(CancellationToken cancellationToken)
+    {
+        var overdueTenants = await tenantRepository.ListOverdueActiveTenantsAsync(DateTime.UtcNow, cancellationToken);
+
+        var now = DateTime.UtcNow;
+        foreach (var tenant in overdueTenants)
+        {
+            tenant.Status = TenantStatus.Expired;
+            tenant.UpdatedAt = now;
+        }
+
+        if (overdueTenants.Count > 0)
+        {
+            await tenantRepository.SaveChangesAsync(cancellationToken);
+        }
+
+        return overdueTenants.Count;
+    }
 }

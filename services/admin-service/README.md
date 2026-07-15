@@ -57,16 +57,17 @@ admin-service/
 
 新用户注册后处于 `pending` 待审核状态（字段维护在 sso-service 的 `users` 表），管理员先通过 [`GET /admin-service/api/v1/reviews/users`](#api-说明)（默认 `reviewStatus=pending`）看到待审核用户列表——本接口只是薄转发，内部直连 sso-service 新增的 `GET /internal/users` 分页查询接口，不在 admin-service 侧落库/缓存用户数据。
 
-管理员在开户向导里选定目标数据库实例后，通过 [`POST /admin-service/api/v1/reviews/{userId}/approve`](#api-说明)（body: `{"databaseInstanceId": ...}`）触发审核开户，编排逻辑见 [`ReviewService`](src/AdminService.Application/Services/ReviewService.cs)。这是一个**异步**流程：同步部分只做校验和创建开户 Job，成功后立即返回 `{"userId", "tenant", "jobId"}`，前端凭 `jobId` 轮询 backend-job-service 的 [`GET /backend-job-service/api/v1/jobs/{jobId}/status`](../backend-job-service/README.md#api-说明) 得知开户是否完成。
+管理员在开户向导里选定目标数据库实例、填写 License 到期时间后，通过 [`POST /admin-service/api/v1/reviews/{userId}/approve`](#api-说明)（body: `{"databaseInstanceId": ..., "licenseExpiresAt": "..."}`）触发审核开户，编排逻辑见 [`ReviewService`](src/AdminService.Application/Services/ReviewService.cs)。这是一个**异步**流程：同步部分只做校验和创建开户 Job，成功后立即返回 `{"userId", "tenant", "jobId"}`，前端凭 `jobId` 轮询 backend-job-service 的 [`GET /backend-job-service/api/v1/jobs/{jobId}/status`](../backend-job-service/README.md#api-说明) 得知开户是否完成。
 
 管理员也可以拒绝审核：`POST /admin-service/api/v1/reviews/{userId}/reject` 只调用 sso-service 一步，不涉及租户/数据库实例——被拒绝的用户不开户。sso-service 侧会把该用户软删除，**拒绝不可撤销**：拒绝后无法再对同一 `userId` 调用 approve/reject（统一返回 404），但该用户可以用同一 `username`/`email` 重新走注册流程。
 
 同步部分：
 
-1. 调用 sso-service `GET /internal/users/{userID}` 校验用户存在
-2. 校验 `databaseInstanceId` 对应的 [`DatabaseInstance`](src/AdminService.Domain/Entities/DatabaseInstance.cs) 存在
-3. 若该用户尚无租户记录：生成全局唯一的 `tenant_id`（UUID）与 `tenant_code`（12 位小写 base32），DB 地址取自选中的数据库实例，写入 `tenants` 表（`status=created`，记录 `database_instance_id`）与 `user_tenants` 关系表；数据库名/用户名固定为 `tenant_{tenant_code}`，密码用 [`SecurePasswordGenerator`](src/AdminService.Application/Common/SecurePasswordGenerator.cs) 生成（16 位，大小写字母+数字+符号，排除易混淆字符——这是新建租户数据库用户的密码，与 `DatabaseInstance` 本身的管理员密码是两个不同的密钥）
-4. 调用 backend-job-service `POST /backend-job-service/api/v1/jobs` + `POST .../jobs/{jobId}/tasks` 创建一次性开户作业，按顺序挂载四个任务，返回 `jobId`
+1. 校验 `licenseExpiresAt` 晚于当前时间，否则返回 400
+2. 调用 sso-service `GET /internal/users/{userID}` 校验用户存在
+3. 校验 `databaseInstanceId` 对应的 [`DatabaseInstance`](src/AdminService.Domain/Entities/DatabaseInstance.cs) 存在
+4. 若该用户尚无租户记录：生成全局唯一的 `tenant_id`（UUID）与 `tenant_code`（12 位小写 base32），DB 地址取自选中的数据库实例，写入 `tenants` 表（`status=created`，记录 `database_instance_id`、`license_expires_at`）与 `user_tenants` 关系表；数据库名/用户名固定为 `tenant_{tenant_code}`，密码用 [`SecurePasswordGenerator`](src/AdminService.Application/Common/SecurePasswordGenerator.cs) 生成（16 位，大小写字母+数字+符号，排除易混淆字符——这是新建租户数据库用户的密码，与 `DatabaseInstance` 本身的管理员密码是两个不同的密钥）。若该用户已有租户记录（幂等短路），不会用本次传入的 `licenseExpiresAt` 覆盖已设置的到期时间
+5. 调用 backend-job-service `POST /backend-job-service/api/v1/jobs` + `POST .../jobs/{jobId}/tasks` 创建一次性开户作业，按顺序挂载四个任务，返回 `jobId`
 
 四个任务按序执行、前一个失败后续不执行（见 [backend-job-service README](../backend-job-service/README.md#内置插件-backendjobserviceplugins)）：
 
@@ -89,6 +90,7 @@ admin-service/
 | --- | --- | --- |
 | GET | `/internal/database-instances/{id}/credentials` | 供 backend-job-service 的建库/建用户插件按 `databaseInstanceId` 现取解密后的连接信息（`dbType`/`host`/`port`/`username`/`password`），不存在返回 404 |
 | PUT | `/internal/tenants/{tenantId}/activate` | 供 backend-job-service 的 `admin-activate-tenant` 插件在开户 Job 前置任务全部成功后回写租户状态；`{tenantId}` 是 `Tenant.TenantId`（GUID 业务键），不是自增主键；幂等，已是 `Active` 直接返回；不存在返回 404 |
+| PUT | `/internal/tenants/expire-overdue` | 供 backend-job-service 每日 License 监控 Job 的 `admin-expire-overdue-tenants` 插件调用：批量检查所有 `Status=Active` 且 `license_expires_at` 已早于当前时间的租户，置为 `Expired`，返回 `{"expiredCount": N}`；不针对单个租户，没有过期租户时返回 `expiredCount: 0`，不是 404；幂等（已是 `Expired` 的租户天然不在查询范围内）；见 [License 管理](#license-管理) |
 
 三个服务（sso-service/admin-service/backend-job-service）共用同一份 `Internal:Token`（`config-dev-secret` 的 `internal-api-token`）。
 
@@ -101,6 +103,16 @@ admin-service/
 * 加密算法固定 AES-256-GCM，实现见共享 SDK [`packages/db-credential-crypto`](../../packages/db-credential-crypto)（Go + .NET 两套实现，密文格式二进制兼容），密钥通过 `DbInstanceEncryptionKey` 配置注入（K8s Secret `config-dev-secret` 的 `db-instance-encryption-key`，见 [`AesGcmDbCredentialCipher`](src/AdminService.Infrastructure/Security/AesGcmDbCredentialCipher.cs)）
 * 编辑（`PUT`）时密码字段可选：不传则保留原密文，不会用空值覆盖；传了才重新加密
 * 删除为软删除（`deleted_at`），与仓库其他资源一致
+
+## License 管理
+
+租户 License 目前只有一个到期时间字段（`tenants.license_expires_at`），与 `Tenant` 是 1:1 关系，没有单独建表——没有多次续期/历史记录的需求，暂不需要更复杂的模型：
+
+* 到期时间在开户向导里由管理员**手动填写**，随 `POST /admin-service/api/v1/reviews/{userId}/approve` 请求体的 `licenseExpiresAt` 一起提交，必须晚于当前时间（否则 400）
+* 已有租户记录的用户重复调用 approve（幂等短路分支）不会覆盖已设置的到期时间
+* 每天由 backend-job-service 的一个全局 Cron Job（`admin-expire-overdue-tenants` 插件，见 [backend-job-service README](../backend-job-service/README.md#内置插件-backendjobserviceplugins)）调用本服务的 `PUT /internal/tenants/expire-overdue`，批量把所有 `Status=Active` 且已过期的租户置为 `Expired`——`TenantStatus.Expired` 这个状态值在本次改动前就存在于枚举里但从未被代码设置过，这是它第一次被真正使用
+* 监控到期后**只做状态流转**，不做权限收回（比如撤销数据库用户权限）、不做通知——仓库里没有 notification-service，通知渠道超出当前范围，如果以后要加，通知可以作为这个 Cron Job 里追加的下一个 Task，不需要改动现有逻辑
+* `Created`/`Cancelled` 状态的租户不参与这个流转：未激活的租户没有"过期"的意义，已取消的也不该被改回 `Expired`
 
 ## 本地启动方式
 
@@ -152,7 +164,7 @@ Base path: `/admin-service/api/v1`
 | GET | `/admin-service/api/v1/settings/{key}` | 查询指定设置，不存在返回 404 |
 | PUT | `/admin-service/api/v1/settings/{key}` | 创建或更新指定设置（body: `{"value": "...", "description": "..."}`） |
 | GET | `/admin-service/api/v1/reviews/users` | 分页查询指定审核状态的待审核用户列表，支持 `reviewStatus`（默认 `pending`，也可传 `approved`/`rejected`）/`page`/`pageSize`/`sortBy`（`id`/`createdAt`，非法字段 400）/`sortOrder`，响应体固定为 `items`/`page`/`pageSize`/`total`；内部转发 sso-service 查询，见 [审核与开户](#审核与开户) |
-| POST | `/admin-service/api/v1/reviews/{userId}/approve` | 审核用户注册并触发开户 Job（body: `{"databaseInstanceId"}`），异步：立即返回 `{"userId", "tenant", "jobId"}`，见 [审核与开户](#审核与开户)；用户/数据库实例不存在返回 404，编排失败返回 500 + `{"failedStep", "message"}` |
+| POST | `/admin-service/api/v1/reviews/{userId}/approve` | 审核用户注册并触发开户 Job（body: `{"databaseInstanceId", "licenseExpiresAt"}`），异步：立即返回 `{"userId", "tenant", "jobId"}`，见 [审核与开户](#审核与开户)；`licenseExpiresAt` 早于当前时间返回 400，用户/数据库实例不存在返回 404，编排失败返回 500 + `{"failedStep", "message"}` |
 | POST | `/admin-service/api/v1/reviews/{userId}/reject` | 拒绝用户注册（不开户），sso-service 侧软删除该用户，拒绝不可撤销，见 [审核与开户](#审核与开户)；用户不存在返回 404，调用 sso-service 失败返回 500 + `{"failedStep", "message"}` |
 | GET | `/admin-service/api/v1/tenants` | 分页查询租户列表，支持 `page`/`pageSize`/`sortBy`（`id`/`tenantCode`/`status`/`createdAt`，非法字段 400）/`sortOrder`，响应体固定为 `items`/`page`/`pageSize`/`total` |
 | GET | `/admin-service/api/v1/database-instances` | 分页查询数据库实例列表，支持 `page`/`pageSize`/`sortBy`（`id`/`name`/`dbType`/`createdAt`/`updatedAt`，非法字段 400）/`sortOrder`，响应体固定为 `items`/`page`/`pageSize`/`total` |

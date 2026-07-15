@@ -19,11 +19,16 @@ public class ReviewController(IReviewService reviewService) : ControllerBase
 
         try
         {
-            return Ok(await reviewService.ApproveAsync(userId, request.DatabaseInstanceId, admin.UserId, cancellationToken));
+            return Ok(await reviewService.ApproveAsync(
+                userId, request.DatabaseInstanceId, request.LicenseExpiresAt, admin.UserId, cancellationToken));
         }
         catch (NotFoundException ex)
         {
             return NotFound(new { error = ex.Message });
+        }
+        catch (ValidationException ex)
+        {
+            return BadRequest(new { error = ex.Message });
         }
         catch (ReviewStepFailedException ex)
         {

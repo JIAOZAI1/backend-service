@@ -7,7 +7,8 @@ namespace AdminService.Api.Controllers;
 /// <summary>
 /// 仅供集群内直连调用（规范第 16.5 章），路由不带 admin-service 网关前缀，不经网关暴露，
 /// 由 RequireInternalTokenMiddleware 校验 X-Internal-Token（见 Program.cs 的 /internal 分支）。
-/// 供 backend-job-service 的 admin-activate-tenant 插件在开户 Job 全部前置 Task 成功后回写租户状态。
+/// 供 backend-job-service 的 admin-activate-tenant 插件在开户 Job 全部前置 Task 成功后回写租户状态，
+/// 以及 admin-expire-overdue-tenants 插件每日检查并流转过期租户。
 /// </summary>
 [ApiController]
 [Route("internal/tenants")]
@@ -25,5 +26,16 @@ public class InternalTenantsController(ITenantInternalService tenantInternalServ
         {
             return NotFound(new { error = ex.Message });
         }
+    }
+
+    /// <summary>
+    /// 批量检查所有 Active 且 License 已过期的租户并置为 Expired，供每日监控 Job 调用。
+    /// 不针对单个租户，没有找到任何过期租户是正常情况（expiredCount: 0），不返回 404。
+    /// </summary>
+    [HttpPut("expire-overdue")]
+    public async Task<IActionResult> ExpireOverdueInternal(CancellationToken cancellationToken)
+    {
+        var count = await tenantInternalService.ExpireOverdueTenantsAsync(cancellationToken);
+        return Ok(new { expiredCount = count });
     }
 }

@@ -153,10 +153,13 @@ public class MyTaskHandler : ITaskHandler
 | `BackendJobService.Plugins.MySql.CreateUserHandler` | 创建用户并可选授权（幂等，已存在则跳过且不改密码） | `databaseInstanceId`（必填）、`username`/`password`（必填）、`host`（默认 `%`）、`grantDatabase`（可选）、`privileges`（默认 `["ALL PRIVILEGES"]`，白名单校验） |
 | `BackendJobService.Plugins.Sso.MarkUserReviewedHandler` | 调用 sso-service 标记用户已审核 | `userId`/`reviewedBy`（必填） |
 | `BackendJobService.Plugins.Admin.ActivateTenantHandler` | 调用 admin-service 把租户状态置为 Active | `tenantId`（必填，`Tenant.TenantId` 业务键） |
+| `BackendJobService.Plugins.Admin.ExpireOverdueTenantsHandler` | 调用 admin-service 批量检查并过期到期租户，不针对单个租户 | 无（`parameters_json` 恒为 `"{}"`） |
 
-**MySQL 管理员连接串不再由部署环境固定注入**：`CreateDatabaseHandler`/`CreateUserHandler` 按 `databaseInstanceId` 调用 admin-service 的 `GET /internal/database-instances/{id}/credentials` 现取解密后的连接信息（host/port/username/password），现取现用、不落库、不缓存，拼成 MySqlConnector DSN 后再连接——这样同一个插件可以对接管理员在 admin-service 注册的任意数据库实例，不再局限于单一固定实例。`Sso.MarkUserReviewedHandler`/`Admin.ActivateTenantHandler` 同样通过反查其他服务的内部接口完成动作，而非直接操作数据库。
+**MySQL 管理员连接串不再由部署环境固定注入**：`CreateDatabaseHandler`/`CreateUserHandler` 按 `databaseInstanceId` 调用 admin-service 的 `GET /internal/database-instances/{id}/credentials` 现取解密后的连接信息（host/port/username/password），现取现用、不落库、不缓存，拼成 MySqlConnector DSN 后再连接——这样同一个插件可以对接管理员在 admin-service 注册的任意数据库实例，不再局限于单一固定实例。`Sso.MarkUserReviewedHandler`/`Admin.ActivateTenantHandler`/`Admin.ExpireOverdueTenantsHandler` 同样通过反查其他服务的内部接口完成动作，而非直接操作数据库。
 
-四个内置插件调用 admin-service/sso-service 时使用的 base URL 与共享密钥统一从环境变量读取，见 [`InternalServiceClientHelper`](src/BackendJobService.Plugins/Internal/InternalServiceClientHelper.cs)：`JOB_PLUGIN_ADMIN_SERVICE_BASE_URL`/`JOB_PLUGIN_SSO_SERVICE_BASE_URL` 给出目标服务的 Service DNS，`Internal__Token`（与本服务入站鉴权用的同一个环境变量）作为 `X-Internal-Token` 请求头附加到每个出站请求上。插件运行在 `Activator.CreateInstance` 构造的对象里，没有 DI 容器，因此 `HttpClient` 是手动构造的，不经过 `IHttpClientFactory`。
+`ExpireOverdueTenantsHandler` 是每日租户 License 监控的执行体：挂在一个**全局 Cron Job**下（`scheduleType: Cron`，如 `cronExpression: "0 2 * * *"` 每天 02:00 UTC），与其余插件挂在"每个租户开户时创建的一次性 Job"下不同——这个 Job 只需要**手动创建一次**（`POST /backend-job-service/api/v1/jobs` + `POST .../jobs/{jobId}/tasks`，运维操作，不在代码里自动创建，因为本服务的 `jobs.name` 没有唯一约束、也没有按名称查重的接口，重复调用创建会产生重复 Job），此后由 `JobSchedulerHostedService` 按 `cronExpression` 永久自动重复触发，不需要每天重建。
+
+四个 HTTP 类内置插件（Sso/Admin 目录下）调用 admin-service/sso-service 时使用的 base URL 与共享密钥统一从环境变量读取，见 [`InternalServiceClientHelper`](src/BackendJobService.Plugins/Internal/InternalServiceClientHelper.cs)：`JOB_PLUGIN_ADMIN_SERVICE_BASE_URL`/`JOB_PLUGIN_SSO_SERVICE_BASE_URL` 给出目标服务的 Service DNS，`Internal__Token`（与本服务入站鉴权用的同一个环境变量）作为 `X-Internal-Token` 请求头附加到每个出站请求上。插件运行在 `Activator.CreateInstance` 构造的对象里，没有 DI 容器，因此 `HttpClient` 是手动构造的，不经过 `IHttpClientFactory`。
 
 安全约定：库名/用户名/host/权限均做白名单校验（非法即失败，不拼接进 SQL）；新用户密码由调用方生成并自行保管，执行结果 `output_json` 不回显密码；数据库实例的管理员密码只在插件执行期间的内存中短暂持有，不落库、不写入 `output_json`。
 
