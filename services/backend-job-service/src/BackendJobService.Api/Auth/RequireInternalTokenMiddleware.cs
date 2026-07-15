@@ -4,11 +4,15 @@ using System.Text;
 namespace BackendJobService.Api.Auth;
 
 /// <summary>
-/// 校验集群内直连调用（如 admin-service 审核开户流程）携带的共享密钥，用于弥补
-/// "不经网关暴露"仅靠网络可达性作为信任边界的不足：即便调用方能连到本服务的 ClusterIP，
-/// 没有该密钥也无法调用。仅拦截"创建作业/创建任务"这两个会触发建库建用户等运维操作的写接口，
-/// 其余只读接口维持现状不做改动。密钥通过 K8s Secret 下发（见 deploy/k8s/base/secret-dev.yaml
-/// 的 internal-api-token），三个服务共享同一份，用固定时间比较防止时序侧信道泄露密钥。
+/// 创建作业/创建任务是本服务对外的公开业务 API（规范 16.5.3：即使当前只被 admin-service 等
+/// 集群内服务调用，也不算"仅内部调用接口"，不能要求所有调用方都携带内部共享密钥），
+/// 前端会经网关正常调用这两个接口。这里放行两类调用方：
+/// 1) 经网关 ForwardAuth 登录校验后转发的请求——带有网关注入且客户端无法伪造的
+///    X-User-Id/X-Username 头（见 GatewayUser、deploy/k8s/gateway/auth-middleware.yaml）；
+/// 2) 集群内直连调用（如 admin-service 审核开户流程）——携带与本服务一致的共享密钥
+///    X-Internal-Token，用于弥补"不经网关暴露"仅靠网络可达性作为信任边界的不足。
+/// 两者都没有的请求（如未登录的匿名直连）才拒绝。密钥通过 K8s Secret 下发
+/// （见 deploy/k8s/base/secret-dev.yaml 的 internal-api-token），用固定时间比较防止时序侧信道泄露。
 /// </summary>
 public class RequireInternalTokenMiddleware(RequestDelegate next, string expectedToken)
 {
@@ -22,6 +26,12 @@ public class RequireInternalTokenMiddleware(RequestDelegate next, string expecte
     public async Task InvokeAsync(HttpContext context)
     {
         if (!IsProtectedRoute(context.Request))
+        {
+            await next(context);
+            return;
+        }
+
+        if (GatewayUser.FromRequest(context.Request) is not null)
         {
             await next(context);
             return;

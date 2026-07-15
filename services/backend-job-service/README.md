@@ -98,13 +98,15 @@ Base path: `/backend-job-service/api/v1`
 | GET  | `/backend-job-service/api/v1/jobs/{jobId}/status` | 查询作业状态聚合视图（作业状态 + 最近一次执行及其 Task 状态），供前端轮询 |
 | GET  | `/backend-job-service/api/v1/executions/{executionId}` | 查询单次执行详情（含每个 Task 的执行状态） |
 
-标 🔒 的两个写接口（`POST /jobs`、`POST /jobs/{jobId}/tasks`）会触发建库/建用户等运维操作，要求请求携带 `X-Internal-Token` 请求头并与配置的 `Internal:Token` 一致，见下文"内部调用鉴权"；其余只读接口不受影响。
+标 🔒 的两个写接口（`POST /jobs`、`POST /jobs/{jobId}/tasks`）是本服务对外的公开业务 API，前端经网关正常调用；同时也会触发建库/建用户等运维操作，因此对未经网关登录校验的调用方（如集群内直连）额外要求 `X-Internal-Token` 请求头与配置的 `Internal:Token` 一致，见下文"内部调用鉴权"。
 
 ## 内部调用鉴权
 
-`POST /jobs` 与 `POST /jobs/{jobId}/tasks` 目前唯一的调用方是 admin-service 的审核开户流程（触发 `mysql-create-database`/`mysql-create-user` 建库建用户）。这两个接口不经网关暴露，但仅靠"网络可达性"作为信任边界不足以防止集群内其他 Pod 越权调用，因此额外要求共享密钥：
+`POST /jobs` 与 `POST /jobs/{jobId}/tasks` 是公开业务接口（规范 16.5.3：作业/任务创建不算"仅内部调用接口"，即使目前主要调用方之一是 admin-service 的审核开户流程，触发 `mysql-create-database`/`mysql-create-user` 建库建用户，路由与方法命名也维持对外 API 规范），前端经网关调用時不要求携带内部密钥。这两个接口不经网关暴露给集群内直连调用时，仅靠"网络可达性"作为信任边界不足以防止集群内其他 Pod 越权调用，因此按调用来源分两种校验方式：
 
 * [`RequireInternalTokenMiddleware`](src/BackendJobService.Api/Auth/RequireInternalTokenMiddleware.cs) 只拦截上述两个写接口（按 method + path 精确匹配），其余只读接口维持现状不做改动
+* 请求带有网关注入的 `X-User-Id`/`X-Username`（见 [`GatewayUser`](src/BackendJobService.Api/Auth/GatewayUser.cs)，客户端无法伪造）时视为已登录用户经网关调用，直接放行
+* 否则要求携带 `X-Internal-Token` 请求头并与配置的 `Internal:Token` 一致，用于集群内直连调用（如 admin-service）
 * 密钥通过 `Internal:Token`（环境变量 `Internal__Token`）配置，与 sso-service、admin-service 共用同一份（`config-dev-secret` 的 `internal-api-token`）
 * 校验用固定时间比较（`CryptographicOperations.FixedTimeEquals`）防止时序侧信道泄露密钥
 * 未配置 `Internal:Token` 时服务启动直接抛异常，不会以"不校验"的状态误上线

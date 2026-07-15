@@ -16,7 +16,8 @@ public class RequireInternalTokenMiddlewareTests
 {
     private const string ExpectedToken = "test-internal-token";
 
-    private static async Task<(int StatusCode, HttpClient Client)> SendAsync(HttpMethod method, string path, string? token)
+    private static async Task<(int StatusCode, HttpClient Client)> SendAsync(
+        HttpMethod method, string path, string? token, bool withGatewayUser = false)
     {
         using var host = await new HostBuilder()
             .ConfigureWebHost(webBuilder =>
@@ -35,6 +36,12 @@ public class RequireInternalTokenMiddlewareTests
         if (token is not null)
         {
             request.Headers.Add(RequireInternalTokenMiddleware.InternalTokenHeader, token);
+        }
+
+        if (withGatewayUser)
+        {
+            request.Headers.Add(GatewayUser.UserIdHeader, "1");
+            request.Headers.Add(GatewayUser.UsernameHeader, "alice");
         }
 
         var response = await client.SendAsync(request);
@@ -67,6 +74,22 @@ public class RequireInternalTokenMiddlewareTests
     {
         var (statusCode, _) = await SendAsync(HttpMethod.Post, "/backend-job-service/api/v1/jobs/123/tasks", null);
         statusCode.ShouldBe(StatusCodes.Status401Unauthorized);
+    }
+
+    [Fact]
+    public async Task CreateJob_WithGatewayUser_PassesThroughWithoutToken()
+    {
+        // 前端经网关登录校验后调用，带 X-User-Id/X-Username，不需要内部密钥（规范 16.5.3：
+        // 作业创建是公开业务 API，不能要求前端持有集群内部共享密钥）
+        var (statusCode, _) = await SendAsync(HttpMethod.Post, "/backend-job-service/api/v1/jobs", null, withGatewayUser: true);
+        statusCode.ShouldBe(StatusCodes.Status200OK);
+    }
+
+    [Fact]
+    public async Task CreateTask_WithGatewayUser_PassesThroughWithoutToken()
+    {
+        var (statusCode, _) = await SendAsync(HttpMethod.Post, "/backend-job-service/api/v1/jobs/123/tasks", null, withGatewayUser: true);
+        statusCode.ShouldBe(StatusCodes.Status200OK);
     }
 
     [Fact]
