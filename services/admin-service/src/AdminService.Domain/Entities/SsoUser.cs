@@ -13,6 +13,18 @@ public class SsoUser
     public string Username { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string PasswordHash { get; set; } = string.Empty;
+    public sbyte Status { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? DeletedAt { get; set; }
+}
+
+/// <summary>
+/// users.status 取值，须与 sso-service model.UserStatusActive/UserStatusDisabled
+/// （services/sso-service/internal/model/user.go）保持一致——两服务共用同一张表，
+/// 取值定义只能有一份语义来源，这里是镜像而非独立定义。
+/// </summary>
+public static class SsoUserStatus
+{
+    public const sbyte Disabled = 0;
+    public const sbyte Active = 1;
 }

@@ -65,6 +65,7 @@ public class UserManagementRepository(AdminDbContext dbContext) : IUserManagemen
             return new UserWithTenantRow(
                 u.Id, u.Username, u.Email,
                 roles ?? [],
+                u.Status == SsoUserStatus.Active,
                 tenantInfo.TenantCode, tenantInfo.LicenseExpiresAt,
                 u.CreatedAt);
         }).ToList();

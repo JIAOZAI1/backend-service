@@ -49,4 +49,48 @@ public class UsersController(IUserManagementService userManagementService) : Con
             return NotFound(new { error = ex.Message });
         }
     }
+
+    /// <summary>按 ID 查询任意用户详情，不限 reviewStatus/租户状态。</summary>
+    [HttpGet("{userId}")]
+    public async Task<ActionResult<UserDetailResponse>> GetUser(ulong userId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Ok(await userManagementService.GetUserAsync(userId, cancellationToken));
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>启用用户，幂等：已启用的用户重复调用不报错。</summary>
+    [HttpPost("{userId}/enable")]
+    public async Task<IActionResult> EnableUser(ulong userId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await userManagementService.SetUserEnabledAsync(userId, enabled: true, cancellationToken);
+            return NoContent();
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>禁用用户，幂等：已禁用的用户重复调用不报错。禁用后该用户下次登录会被 sso-service 拒绝。</summary>
+    [HttpPost("{userId}/disable")]
+    public async Task<IActionResult> DisableUser(ulong userId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await userManagementService.SetUserEnabledAsync(userId, enabled: false, cancellationToken);
+            return NoContent();
+        }
+        catch (NotFoundException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
 }

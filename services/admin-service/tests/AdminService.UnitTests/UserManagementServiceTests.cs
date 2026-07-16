@@ -19,8 +19,8 @@ public class UserManagementServiceTests
     {
         var rows = new List<UserWithTenantRow>
         {
-            new(1, "alice", "alice@example.com", ["admin", "default"], "abcd1234wxyz", DateTime.UtcNow.AddMonths(6), DateTime.UtcNow),
-            new(2, "bob", "bob@example.com", ["default"], null, null, DateTime.UtcNow),
+            new(1, "alice", "alice@example.com", ["admin", "default"], true, "abcd1234wxyz", DateTime.UtcNow.AddMonths(6), DateTime.UtcNow),
+            new(2, "bob", "bob@example.com", ["default"], false, null, null, DateTime.UtcNow),
         };
         _repository.Setup(r => r.ListUsersWithTenantAsync(1, 20, It.IsAny<SortSpec>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync((rows, 2L));
@@ -80,6 +80,71 @@ public class UserManagementServiceTests
         var service = CreateService();
 
         await Should.ThrowAsync<NotFoundException>(() => service.ResetPasswordAsync(999, CancellationToken.None));
+        _repository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetUserAsync_UserExists_MapsEnabledFromStatus()
+    {
+        var user = new SsoUser { Id = 42, Username = "alice", Email = "alice@example.com", Status = SsoUserStatus.Active };
+        _repository.Setup(r => r.GetUserByIdAsync(42, It.IsAny<CancellationToken>())).ReturnsAsync(user);
+
+        var service = CreateService();
+        var result = await service.GetUserAsync(42, CancellationToken.None);
+
+        result.Username.ShouldBe("alice");
+        result.Enabled.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task GetUserAsync_UserNotFound_ThrowsNotFoundException()
+    {
+        _repository.Setup(r => r.GetUserByIdAsync(It.IsAny<ulong>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SsoUser?)null);
+
+        var service = CreateService();
+
+        await Should.ThrowAsync<NotFoundException>(() => service.GetUserAsync(999, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SetUserEnabledAsync_Disable_SetsStatusToDisabledAndSaves()
+    {
+        var user = new SsoUser { Id = 42, Username = "alice", Email = "alice@example.com", Status = SsoUserStatus.Active };
+        _repository.Setup(r => r.GetUserByIdAsync(42, It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _repository.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        var service = CreateService();
+        await service.SetUserEnabledAsync(42, enabled: false, CancellationToken.None);
+
+        user.Status.ShouldBe(SsoUserStatus.Disabled);
+        _repository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SetUserEnabledAsync_Enable_SetsStatusToActiveAndSaves()
+    {
+        var user = new SsoUser { Id = 42, Username = "alice", Email = "alice@example.com", Status = SsoUserStatus.Disabled };
+        _repository.Setup(r => r.GetUserByIdAsync(42, It.IsAny<CancellationToken>())).ReturnsAsync(user);
+        _repository.Setup(r => r.SaveChangesAsync(It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        var service = CreateService();
+        await service.SetUserEnabledAsync(42, enabled: true, CancellationToken.None);
+
+        user.Status.ShouldBe(SsoUserStatus.Active);
+        _repository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SetUserEnabledAsync_UserNotFound_ThrowsNotFoundException()
+    {
+        _repository.Setup(r => r.GetUserByIdAsync(It.IsAny<ulong>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((SsoUser?)null);
+
+        var service = CreateService();
+
+        await Should.ThrowAsync<NotFoundException>(
+            () => service.SetUserEnabledAsync(999, enabled: false, CancellationToken.None));
         _repository.Verify(r => r.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 }

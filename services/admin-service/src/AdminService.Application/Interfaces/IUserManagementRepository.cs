@@ -29,6 +29,7 @@ public record UserWithTenantRow(
     string Username,
     string Email,
     IReadOnlyList<string> Roles,
+    bool Enabled,
     string? TenantCode,
     DateTime? LicenseExpiresAt,
     DateTime CreatedAt);

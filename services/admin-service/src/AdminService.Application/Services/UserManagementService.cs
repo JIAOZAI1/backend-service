@@ -2,6 +2,7 @@ using AdminService.Application.Common;
 using AdminService.Application.DTOs;
 using AdminService.Application.Exceptions;
 using AdminService.Application.Interfaces;
+using AdminService.Domain.Entities;
 
 namespace AdminService.Application.Services;
 
@@ -30,6 +31,7 @@ public class UserManagementService(IUserManagementRepository repository) : IUser
                 Username = row.Username,
                 Email = row.Email,
                 Roles = row.Roles,
+                Enabled = row.Enabled,
                 TenantCode = row.TenantCode,
                 LicenseExpiresAt = row.LicenseExpiresAt,
                 CreatedAt = row.CreatedAt,
@@ -51,5 +53,30 @@ public class UserManagementService(IUserManagementRepository repository) : IUser
         await repository.SaveChangesAsync(cancellationToken);
 
         return new ResetPasswordResponse(newPassword);
+    }
+
+    public async Task<UserDetailResponse> GetUserAsync(ulong userId, CancellationToken cancellationToken)
+    {
+        var user = await repository.GetUserByIdAsync(userId, cancellationToken)
+            ?? throw new NotFoundException($"user {userId} not found");
+
+        return new UserDetailResponse
+        {
+            Id = user.Id,
+            Username = user.Username,
+            Email = user.Email,
+            Enabled = user.Status == SsoUserStatus.Active,
+            CreatedAt = user.CreatedAt,
+        };
+    }
+
+    public async Task SetUserEnabledAsync(ulong userId, bool enabled, CancellationToken cancellationToken)
+    {
+        var user = await repository.GetUserByIdAsync(userId, cancellationToken)
+            ?? throw new NotFoundException($"user {userId} not found");
+
+        user.Status = enabled ? SsoUserStatus.Active : SsoUserStatus.Disabled;
+
+        await repository.SaveChangesAsync(cancellationToken);
     }
 }

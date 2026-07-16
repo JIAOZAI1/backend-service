@@ -18,4 +18,14 @@ public interface IUserManagementService
     /// 跨实现验证不受影响）。新密码只在这一次响应里明文返回，不落库、不记录日志。
     /// </summary>
     Task<ResetPasswordResponse> ResetPasswordAsync(ulong userId, CancellationToken cancellationToken);
+
+    /// <summary>按 ID 查询任意用户详情（不限 reviewStatus/租户状态），供管理员用户管理页面使用。</summary>
+    Task<UserDetailResponse> GetUserAsync(ulong userId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// 启用/禁用用户：直接写 users.status（与 sso-service model.UserStatusActive/Disabled
+    /// 取值一致），登录校验在 sso-service auth_service 里，禁用后该用户下次登录会被拒绝。
+    /// 操作幂等，对已处于目标状态的用户重复调用不报错。
+    /// </summary>
+    Task SetUserEnabledAsync(ulong userId, bool enabled, CancellationToken cancellationToken);
 }

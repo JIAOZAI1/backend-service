@@ -116,13 +116,14 @@ admin-service/
 
 ## 用户管理
 
-系统管理员的用户列表（`GET /admin-service/api/v1/users`）与密码重置（`POST /admin-service/api/v1/users/{userId}/reset-password`），与 [审核与开户](#审核与开户) 的待审核列表不同——不限 `reviewStatus`，用于日常全量用户管理，且直接把用户所属租户信息（`tenantCode`/`licenseExpiresAt`）一并返回。
+系统管理员的用户列表（`GET /admin-service/api/v1/users`）、按 ID 查询用户详情（`GET /admin-service/api/v1/users/{userId}`）、启用/禁用用户（`POST /admin-service/api/v1/users/{userId}/enable`、`/disable`）与密码重置（`POST /admin-service/api/v1/users/{userId}/reset-password`），与 [审核与开户](#审核与开户) 的待审核列表不同——不限 `reviewStatus`，用于日常全量用户管理，且直接把用户所属租户信息（`tenantCode`/`licenseExpiresAt`）一并返回。
 
 `users`/`roles`/`user_roles` 三张表由 sso-service 拥有（迁移脚本以 [sso-service/migrations](../sso-service/migrations) 为准），本服务与 sso-service 共用同一个 MySQL 数据库 `sys_db`（见上文"本地启动方式"），因此这里选择直接映射同一批表跨库查询/写入，不经 HTTP 调用 sso-service——读（用户列表）和写（密码重置）都是如此：
 
 * [`SsoUser`](src/AdminService.Domain/Entities/SsoUser.cs)/[`SsoRole`](src/AdminService.Domain/Entities/SsoRole.cs)/`SsoUserRole` 是这三张表在本服务里的只读镜像，字段只声明本服务用得到的列，不是 sso-service 对应模型的完整镜像；命名带 `Sso` 前缀，避免与本服务的 `GatewayUser`（网关注入的当前登录管理员身份）混淆
 * 用户列表一次查询 `users`，再批量查 `user_roles`/`roles`（角色）与 `user_tenants`/`tenants`（当前 active 租户）后在内存里按 `userId` 聚合——EF Core 对 MySQL 没有可移植的 `GROUP_CONCAT` 映射，拆成多次查询比拼原生 SQL 更符合本服务其他 Repository 的实现风格
 * 密码重置：生成随机临时密码（复用 [`SecurePasswordGenerator`](src/AdminService.Application/Common/SecurePasswordGenerator.cs)，16 位，与开户流程生成租户数据库密码用的是同一个生成器），用 `BCrypt.Net-Next` 以 work factor 10 计算哈希后直接 `UPDATE users SET password_hash=...`——与 sso-service 侧 `bcrypt.DefaultCost`（Go `golang.org/x/crypto/bcrypt` 定义为 10）保持一致；bcrypt 密文自带 cost 参数，写入方是哪个语言实现不影响登录时的校验。新密码只在这一次响应里明文返回，不落库、不记录日志，管理员需当场转告用户
+* 启用/禁用：直接写 `users.status`，取值定义镜像自 sso-service `model.UserStatusActive`/`UserStatusDisabled`（`1`/`0`，见 [`SsoUserStatus`](src/AdminService.Domain/Entities/SsoUser.cs)），登录校验在 sso-service `auth_service` 里判断该字段，禁用后用户下次登录会被拒绝；操作幂等，对已处于目标状态的用户重复调用不报错
 * 与 sso-service 的软删除语义保持一致：`SsoUserConfiguration` 对 `deleted_at` 加了 `HasQueryFilter`，被拒绝审核（软删除，见 sso-service README"用户审核字段说明"）的用户不会出现在列表里，也无法被重置密码（`GetUserByIdAsync` 查不到）
 
 ## 本地启动方式
@@ -183,7 +184,10 @@ Base path: `/admin-service/api/v1`
 | POST | `/admin-service/api/v1/database-instances` | 注册数据库实例（body: `{"name", "dbType", "host", "port", "username", "password"}`），`dbType` 目前仅支持 `mysql`，`name` 重复或字段非法返回 400 |
 | PUT | `/admin-service/api/v1/database-instances/{id}` | 编辑数据库实例（body: `{"name", "host", "port", "username", "password"}`，`password` 可省略以保留原密码），不存在返回 404，`name` 与其他实例重复或字段非法返回 400 |
 | DELETE | `/admin-service/api/v1/database-instances/{id}` | 软删除数据库实例，不存在返回 404 |
-| GET | `/admin-service/api/v1/users` | 分页查询全量用户（不限 reviewStatus），含角色与当前 active 租户信息（`tenantCode`/`licenseExpiresAt`，未开户或租户非 active 时为空），支持 `page`/`pageSize`/`sortBy`（`id`/`username`/`createdAt`，非法字段 400）/`sortOrder`，响应体固定为 `items`/`page`/`pageSize`/`total`，见 [用户管理](#用户管理) |
+| GET | `/admin-service/api/v1/users` | 分页查询全量用户（不限 reviewStatus），含角色、启用状态（`enabled`）与当前 active 租户信息（`tenantCode`/`licenseExpiresAt`，未开户或租户非 active 时为空），支持 `page`/`pageSize`/`sortBy`（`id`/`username`/`createdAt`，非法字段 400）/`sortOrder`，响应体固定为 `items`/`page`/`pageSize`/`total`，见 [用户管理](#用户管理) |
+| GET | `/admin-service/api/v1/users/{userId}` | 按 ID 查询任意用户详情（不限 reviewStatus），见 [用户管理](#用户管理)；用户不存在返回 404 |
+| POST | `/admin-service/api/v1/users/{userId}/enable` | 启用用户，幂等，见 [用户管理](#用户管理)；用户不存在返回 404 |
+| POST | `/admin-service/api/v1/users/{userId}/disable` | 禁用用户，幂等，禁用后下次登录会被 sso-service 拒绝，见 [用户管理](#用户管理)；用户不存在返回 404 |
 | POST | `/admin-service/api/v1/users/{userId}/reset-password` | 重置用户密码为随机临时密码，响应 `{"newPassword"}` 明文只返回一次，见 [用户管理](#用户管理)；用户不存在返回 404 |
 
 `TenantResponse`/`DatabaseInstanceResponse` 均不回显密码字段（数据库密码只落库，不通过任何查询接口返回）；`DatabaseInstance` 密码额外加密后落库，见[数据库实例管理](#数据库实例管理)。

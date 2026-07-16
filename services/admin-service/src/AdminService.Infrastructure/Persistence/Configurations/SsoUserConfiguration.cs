@@ -16,6 +16,7 @@ public class SsoUserConfiguration : IEntityTypeConfiguration<SsoUser>
         builder.Property(u => u.Username).HasColumnName("username").HasMaxLength(64).IsRequired();
         builder.Property(u => u.Email).HasColumnName("email").HasMaxLength(128).IsRequired();
         builder.Property(u => u.PasswordHash).HasColumnName("password_hash").HasMaxLength(255).IsRequired();
+        builder.Property(u => u.Status).HasColumnName("status").IsRequired();
         builder.Property(u => u.CreatedAt).HasColumnName("created_at").IsRequired();
         builder.Property(u => u.DeletedAt).HasColumnName("deleted_at");
 
