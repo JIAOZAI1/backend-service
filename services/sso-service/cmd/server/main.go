@@ -65,7 +65,11 @@ func main() {
 	internalUserService := service.NewInternalUserService(userRepo)
 	internalUserHandler := handler.NewInternalUserHandler(internalUserService)
 
-	router := handler.NewRouter(authHandler, roleHandler, internalUserHandler, jwtIssuer, tokenRepo, roleRepo, tenantRepo, cfg.Internal.Token)
+	tenantCacheRepo := repository.NewTenantCacheRepository(rdb)
+	tenantDbInfoService := service.NewTenantDbInfoService(tenantRepo, tenantCacheRepo)
+	tenantDbInfoHandler := handler.NewTenantDbInfoHandler(tenantDbInfoService)
+
+	router := handler.NewRouter(authHandler, roleHandler, internalUserHandler, tenantDbInfoHandler, jwtIssuer, tokenRepo, roleRepo, tenantRepo, cfg.Internal.Token)
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.App.Port),

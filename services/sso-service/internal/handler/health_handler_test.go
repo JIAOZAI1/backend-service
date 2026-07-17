@@ -43,7 +43,7 @@ func (f fakeTenantLister) GetActiveTenantCodeByUserID(_ context.Context, userID 
 }
 
 func TestHealthRoute(t *testing.T) {
-	router := handler.NewRouter(nil, nil, nil, jwtutil.NewIssuer("secret", "issuer"), noopBlacklist{}, fakeRoleLister{}, fakeTenantLister{}, "test-internal-token")
+	router := handler.NewRouter(nil, nil, nil, nil, jwtutil.NewIssuer("secret", "issuer"), noopBlacklist{}, fakeRoleLister{}, fakeTenantLister{}, "test-internal-token")
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	w := httptest.NewRecorder()

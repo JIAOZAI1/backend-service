@@ -65,6 +65,28 @@ func NewRoleResponse(r *Role) RoleResponse {
 	return RoleResponse{ID: r.ID, Name: r.Name, Description: r.Description}
 }
 
+// TenantDbInfoResponse 是租户数据库连接信息，供集群内服务（如未来的租户服务）按
+// tenant_code 查询后直连租户库使用。DbPassword 为明文（见 model.Tenant 字段说明）。
+type TenantDbInfoResponse struct {
+	TenantCode string `json:"tenantCode"`
+	DbHost     string `json:"dbHost"`
+	DbPort     int    `json:"dbPort"`
+	DbName     string `json:"dbName"`
+	DbUsername string `json:"dbUsername"`
+	DbPassword string `json:"dbPassword"`
+}
+
+func NewTenantDbInfoResponse(t *Tenant) TenantDbInfoResponse {
+	return TenantDbInfoResponse{
+		TenantCode: t.TenantCode,
+		DbHost:     t.DbHost,
+		DbPort:     t.DbPort,
+		DbName:     t.DbName,
+		DbUsername: t.DbUsername,
+		DbPassword: t.DbPassword,
+	}
+}
+
 type CreateRoleRequest struct {
 	Name        string `json:"name" binding:"required,min=2,max=64"`
 	Description string `json:"description" binding:"max=255"`

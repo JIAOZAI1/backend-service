@@ -20,6 +20,7 @@ func NewRouter(
 	authHandler *AuthHandler,
 	roleHandler *RoleHandler,
 	internalUserHandler *InternalUserHandler,
+	tenantDbInfoHandler *TenantDbInfoHandler,
 	issuer *jwtutil.Issuer,
 	blacklist middleware.BlacklistChecker,
 	roleLister middleware.UserRoleLister,
@@ -48,6 +49,9 @@ func NewRouter(
 	internalUsers.GET("/:userID", internalUserHandler.GetUserInternal)
 	internalUsers.PUT("/:userID/review", internalUserHandler.ApproveReviewInternal)
 	internalUsers.PUT("/:userID/reject", internalUserHandler.RejectReviewInternal)
+
+	internalTenants := r.Group("/internal/tenants", requireInternalToken)
+	internalTenants.GET("/:tenantCode/db-info", tenantDbInfoHandler.GetTenantDbInfoInternal)
 
 	base := r.Group(RoutePrefix)
 	{

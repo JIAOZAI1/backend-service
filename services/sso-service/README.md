@@ -87,6 +87,7 @@ Base path: `/sso-service/api/v1`
 | GET | `/internal/users/{userID}` | 供 admin-service 审核开户流程集群内直连调用：返回用户基本信息（`id`/`username`/`email`/`status`/`reviewStatus`），不存在返回 404（含已被拒绝审核的用户，见下） |
 | PUT | `/internal/users/{userID}/review` | 供 admin-service 审核通过后调用（body: `{"reviewedBy": <管理员用户ID>}`）：把该用户 `review_status` 置为 `approved` 并记录 `reviewed_by`，幂等（重复调用不报错），不存在返回 404 |
 | PUT | `/internal/users/{userID}/reject` | 供 admin-service 审核拒绝后调用（body: `{"reviewedBy": <管理员用户ID>}`）：把该用户 `review_status` 置为 `rejected` 并**软删除**（`deleted_at`），不存在返回 404。拒绝不可撤销——软删除后该用户不再被 `GetUserInternal`/`ApproveReviewInternal`/待审核列表查到，重复调用同一用户返回 404；软删除后允许用同一 `username`/`email` 重新注册（见下文"用户审核字段说明"） |
+| GET | `/internal/tenants/{tenantCode}/db-info` | 供未来的租户服务等集群内调用方按 `tenant_code` 查询租户数据库连接信息（`dbHost`/`dbPort`/`dbName`/`dbUsername`/`dbPassword`），不存在返回 404。走 Redis cache-aside（key `sso:tenant-db-info:<tenantCode>`，TTL 60s）降低高频调用下的 MySQL 压力，Redis 故障时自动回源 MySQL 不阻断请求。**`dbPassword` 为明文**——admin-service 写入 `tenants.db_password` 时未使用 [`packages/db-credential-crypto`](../../packages/db-credential-crypto) 加密（与该包 README 描述的设计不一致，属已知技术债），本接口原样透出，调用方需自行保证响应体不落日志、不明文持久化 |
 
 以上四个内部用户接口均不做用户角色校验，仅信任集群内可信调用方（与 `/internal/auth/verify` 同一设计），不经网关暴露。此外，均要求请求携带 `X-Internal-Token` 请求头并与配置的 `INTERNAL_API_TOKEN` 一致（见 [`middleware.RequireInternalToken`](internal/middleware/internal_token.go)），否则返回 401——`/internal/auth/verify` 不需要此密钥，它的信任边界完全依赖"仅集群内网关中间件可达"。
 

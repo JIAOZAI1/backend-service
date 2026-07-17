@@ -21,7 +21,7 @@ func (s stubBlacklist) IsAccessTokenBlacklisted(_ context.Context, _ string) (bo
 }
 
 func TestVerifyRoute_MissingToken(t *testing.T) {
-	router := handler.NewRouter(nil, nil, nil, jwtutil.NewIssuer("secret", "issuer"), noopBlacklist{}, fakeRoleLister{}, fakeTenantLister{}, "test-internal-token")
+	router := handler.NewRouter(nil, nil, nil, nil, jwtutil.NewIssuer("secret", "issuer"), noopBlacklist{}, fakeRoleLister{}, fakeTenantLister{}, "test-internal-token")
 
 	req := httptest.NewRequest(http.MethodGet, "/internal/auth/verify", nil)
 	w := httptest.NewRecorder()
@@ -35,7 +35,7 @@ func TestVerifyRoute_ValidToken(t *testing.T) {
 	lister := fakeRoleLister{roles: map[uint64][]model.Role{
 		1: {{ID: 1, Name: model.DefaultRoleName}, {ID: 2, Name: "admin"}},
 	}}
-	router := handler.NewRouter(nil, nil, nil, issuer, noopBlacklist{}, lister, fakeTenantLister{}, "test-internal-token")
+	router := handler.NewRouter(nil, nil, nil, nil, issuer, noopBlacklist{}, lister, fakeTenantLister{}, "test-internal-token")
 
 	token, err := issuer.Issue(1, "alice", time.Minute, "jti-verify-1")
 	assert.NoError(t, err)
@@ -60,7 +60,7 @@ func TestVerifyRoute_ValidToken_WithActiveTenant_SetsTenantCodeHeader(t *testing
 	issuer := jwtutil.NewIssuer("secret", "issuer")
 	roleLister := fakeRoleLister{roles: map[uint64][]model.Role{1: {{ID: 1, Name: model.DefaultRoleName}}}}
 	tenantLister := fakeTenantLister{tenantCodes: map[uint64]string{1: "abcd1234wxyz"}}
-	router := handler.NewRouter(nil, nil, nil, issuer, noopBlacklist{}, roleLister, tenantLister, "test-internal-token")
+	router := handler.NewRouter(nil, nil, nil, nil, issuer, noopBlacklist{}, roleLister, tenantLister, "test-internal-token")
 
 	token, err := issuer.Issue(1, "alice", time.Minute, "jti-verify-3")
 	assert.NoError(t, err)
@@ -76,7 +76,7 @@ func TestVerifyRoute_ValidToken_WithActiveTenant_SetsTenantCodeHeader(t *testing
 
 func TestVerifyRoute_BlacklistedToken(t *testing.T) {
 	issuer := jwtutil.NewIssuer("secret", "issuer")
-	router := handler.NewRouter(nil, nil, nil, issuer, stubBlacklist{blacklisted: true}, fakeRoleLister{}, fakeTenantLister{}, "test-internal-token")
+	router := handler.NewRouter(nil, nil, nil, nil, issuer, stubBlacklist{blacklisted: true}, fakeRoleLister{}, fakeTenantLister{}, "test-internal-token")
 
 	token, err := issuer.Issue(1, "alice", time.Minute, "jti-verify-2")
 	assert.NoError(t, err)
