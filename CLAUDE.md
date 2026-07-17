@@ -27,7 +27,7 @@
 
 在本仓库创建或修改任何内容时，必须遵循以下规则（详见规范原文对应章节）：
 
-1. **目录/服务命名**统一 kebab-case，服务名格式为 `<domain>-service`（第 4、6 章）。
+1. **目录/服务命名**统一 kebab-case，服务名格式为 `<domain>-service`；需要按 `tenantCode` 直连租户数据库的服务命名为 `tenant-<业务名>-service`（第 4、6 章，租户服务命名见第 6.4 节）。
 2. **新建服务**必须放在 `services/<domain>-service/`，并按第 7 章对应语言小节的目录结构、分层依赖方向搭建，同时提供 `Dockerfile`、`Makefile`、`README.md`、`service.yaml`、健康检查接口（第 5、7、9、22 章）。
 3. **分层依赖方向不可反向**——例如 .NET Core 的 `Api → Application → Domain`、Go 的 `handler → service → repository`，各语言具体方向见第 7 章对应子节。
 4. **配置与密钥**：环境名只用 `dev/test/staging/prod`；禁止把生产密钥、密码、Token 提交到仓库或硬编码（第 14、15 章）。
@@ -37,7 +37,7 @@
 5.3 **服务间调用**：统一走 K8s Service DNS 直连（`http://<service-name>.<namespace>.svc.cluster.local:<port>`），不经网关；被集群内直连调用的接口必须自行实现调用方鉴权，不能假设"不经网关=已被拦截"（第 16.5.5 章）。
 6. **数据库**：库名 `<domain>_db`，表名小写复数+下划线，字段含 `id/created_at/updated_at/deleted_at`（第 17 章）。
 7. **Git**：分支遵循 `feature/`、`fix/`、`hotfix/`、`release/` 前缀；提交信息遵循 Conventional Commits（`feat/fix/docs/refactor/test/chore/ci`）（第 18-19 章）。
-8. **公共代码**只能放在 `packages/`，禁止服务间直接互相引用内部代码（第 2.2、10 章）。
+8. **公共代码**只能放在 `packages/`，禁止服务间直接互相引用内部代码；新增公共包需在第 10.2 节的已有公共包表格中补充一行（第 2.2、10 章）。
 9. **脚本**统一放在 `scripts/`，命名为“动词-对象.sh”（第 11-12 章）。
 
 ## 修改规范文档本身时
