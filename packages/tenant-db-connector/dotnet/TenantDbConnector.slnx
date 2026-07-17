@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="TenantDbConnector/TenantDbConnector.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="TenantDbConnector.Tests/TenantDbConnector.Tests.csproj" />
+  </Folder>
+</Solution>

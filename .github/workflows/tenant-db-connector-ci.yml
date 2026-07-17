@@ -1,0 +1,69 @@
+name: tenant-db-connector-ci
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - "packages/tenant-db-connector/**"
+  pull_request:
+    paths:
+      - "packages/tenant-db-connector/**"
+
+jobs:
+  go-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/tenant-db-connector/go
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.6"
+          cache-dependency-path: packages/tenant-db-connector/go/go.sum
+
+      - name: Check formatting
+        run: |
+          fmt_out="$(gofmt -l .)"
+          if [ -n "$fmt_out" ]; then
+            echo "The following files are not gofmt-formatted:"
+            echo "$fmt_out"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test ./... -race -cover
+
+  dotnet-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/tenant-db-connector/dotnet
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.301"
+
+      - name: Restore
+        run: dotnet restore TenantDbConnector.slnx
+
+      - name: Check formatting
+        run: dotnet format TenantDbConnector.slnx --verify-no-changes
+
+      - name: Build
+        run: dotnet build TenantDbConnector.slnx -c Release --no-restore
+
+      - name: Test
+        run: dotnet test TenantDbConnector.Tests -c Release --no-build
