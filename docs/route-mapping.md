@@ -11,6 +11,7 @@
 | `lead-mind-backend.dev.com` | `/sso-service` | sso-service | `sso-service.default.svc.cluster.local` | 否（服务内部自带 `RequireAuth`） | 统一登录服务（注册/登录/注销/续期/角色管理），详见 [sso-service README](../services/sso-service/README.md#api-说明) |
 | `lead-mind-backend.dev.com` | `/backend-job-service` | backend-job-service | `backend-job-service.default.svc.cluster.local` | 是 | 作业调度与执行服务（Job/Task 管理、执行状态查询），详见 [backend-job-service README](../services/backend-job-service/README.md#api-说明) |
 | `lead-mind-backend.dev.com` | `/admin-service` | admin-service | `admin-service.default.svc.cluster.local` | 是 | 管理员服务（系统级设置、用户注册审核开户、数据库实例注册），所有接口要求 `admin` 角色，详见 [admin-service README](../services/admin-service/README.md#api-说明) |
+| `lead-mind-backend.dev.com` | `/ai-agent` | ai-agent | `ai-agent.default.svc.cluster.local` | 是 | AI Agent 服务（对话/工具调用），代码在独立仓库 [lead-mind-ai-agent](https://github.com/JIAOZAI1/lead-mind-ai-agent)（非本 monorepo，不受本仓库规范约束）；K8s Service 名与内部路由前缀均为 `ai-agent`，非 `<domain>-service` 格式，是已知的命名例外；服务当前尚未接入网关注入的 `X-User-Id` 等身份头，仅读取自定义 `tenant_id` 头做路由（非鉴权），接入方需自行改造后才能使用用户身份 |
 
 「网关登录校验」为 **是** 的服务由网关 ForwardAuth 统一校验 access token（JWT 验签 + 登出黑名单，见 [deploy/k8s/gateway/README.md](../deploy/k8s/gateway/README.md#登录校验forwardauth)），校验通过后网关向后端注入 `X-User-Id`/`X-Username`/`X-User-Roles`/`X-Tenant-Code` 请求头（`X-Tenant-Code` 为当前用户所属 active 租户的 tenant_code，用户未开户/租户非 active 状态时该头缺失，下游服务需自行处理缺失场景）。
 

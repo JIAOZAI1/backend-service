@@ -57,3 +57,13 @@ spec:
                 name: admin-service
                 port:
                   name: http
+          # ai-agent 服务代码在独立仓库 lead-mind-ai-agent（非本 monorepo），
+          # 其 K8s Service 名与内部路由前缀均为 ai-agent，不是 <domain>-service
+          # 格式，是已知的命名规范例外，详见 docs/route-mapping.md。
+          - path: /ai-agent
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-agent
+                port:
+                  name: http
